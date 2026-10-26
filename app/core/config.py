@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     embedding_dim: int = Field(default=1024, gt=0)
     sqlite_path: str = "data/app.sqlite3"
 
+    # 文档入库
+    upload_dir: str = "data/uploads"
+    max_upload_mb: int = Field(default=20, ge=1, le=100)
+    parent_chunk_chars: int = Field(default=1800, ge=200)
+    child_chunk_chars: int = Field(default=400, ge=100)
+    child_chunk_overlap: int = Field(default=80, ge=0)
+
     @field_validator("log_level")
     @classmethod
     def _normalize_log_level(cls, value: str) -> str:
@@ -55,6 +62,22 @@ class Settings(BaseSettings):
         if not url:
             raise ValueError("服务地址不能为空")
         return url
+
+    @field_validator("upload_dir")
+    @classmethod
+    def _normalize_upload_dir(cls, value: str) -> str:
+        directory = value.strip()
+        if not directory:
+            raise ValueError("upload_dir 不能为空")
+        return directory
+
+    @model_validator(mode="after")
+    def _check_chunk_sizes(self) -> "Settings":
+        if self.child_chunk_chars >= self.parent_chunk_chars:
+            raise ValueError("child_chunk_chars 必须小于 parent_chunk_chars")
+        if self.child_chunk_overlap >= self.child_chunk_chars:
+            raise ValueError("child_chunk_overlap 必须小于 child_chunk_chars")
+        return self
 
 
 @lru_cache

@@ -7,7 +7,8 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from app.core.config import Settings, get_settings
+from app.api.deps import get_app_settings
+from app.core.config import Settings
 from app.services import health as health_service
 
 router = APIRouter(tags=["health"])
@@ -27,7 +28,7 @@ class HealthResponse(BaseModel):
 
 
 @router.get("/health", response_model=HealthResponse, summary="依赖健康检查")
-async def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
+async def health(settings: Settings = Depends(get_app_settings)) -> HealthResponse:
     statuses = await health_service.check_all(settings)
     return HealthResponse(
         status="ok" if all(item.ok for item in statuses) else "degraded",
