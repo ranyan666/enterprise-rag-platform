@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -107,6 +108,7 @@ def test_replace_chunks_then_delete_cascades(tmp_path: Path) -> None:
     assert document["parent_count"] == 1
     assert document["child_count"] == 2
     assert document["page_count"] == 2
+    assert document["vector_count"] == 0
     assert repository.count_chunks("doc-1") == 3
     assert repository.count_chunks("doc-1", "child") == 2
     assert [item["id"] for item in repository.get_chunks("doc-1", level="child")] == ["c1", "c2"]
@@ -116,3 +118,54 @@ def test_replace_chunks_then_delete_cascades(tmp_path: Path) -> None:
     assert repository.get_document("doc-1") is None
     with pytest.raises(DocumentNotFoundError):
         repository.count_chunks("doc-1")
+
+
+def test_set_vector_count_and_reset_for_reindex(tmp_path: Path) -> None:
+    repository = _repo(tmp_path)
+    _create(repository)
+    repository.replace_chunks(
+        "doc-1",
+        parents=[_chunk("p1", "parent", 1)],
+        children=[_chunk("c1", "child", 1, "p1")],
+        page_count=1,
+    )
+    repository.set_vector_count("doc-1", 1)
+    assert repository.get_document("doc-1")["vector_count"] == 1
+
+    repository.reset_for_reindex("doc-1")
+
+    document = repository.get_document("doc-1")
+    assert document["status"] == "pending"
+    assert document["error"] is None
+    assert document["vector_count"] == 0
+    assert document["parent_count"] == 0
+    assert repository.count_chunks("doc-1") == 0
+
+
+def test_init_schema_migrates_legacy_table(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy.sqlite3"
+    connection = sqlite3.connect(db_path)
+    connection.execute(
+        """
+        CREATE TABLE documents (
+          id TEXT PRIMARY KEY, filename TEXT NOT NULL, ext TEXT NOT NULL,
+          size_bytes INTEGER NOT NULL, sha256 TEXT NOT NULL UNIQUE,
+          status TEXT NOT NULL, error TEXT,
+          page_count INTEGER NOT NULL DEFAULT 0,
+          parent_count INTEGER NOT NULL DEFAULT 0,
+          child_count INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "INSERT INTO documents VALUES ('old', 'a.txt', 'txt', 1, ?, 'ready', NULL, 0, 0, 0, 't', 't')",
+        ("0" * 64,),
+    )
+    connection.commit()
+    connection.close()
+
+    repository = DocumentRepository(db_path)
+    repository.init_schema()
+
+    assert repository.get_document("old")["vector_count"] == 0

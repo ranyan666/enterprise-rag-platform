@@ -36,6 +36,7 @@ async def test_upload_text_document_becomes_ready(client, settings: Settings) ->
     assert document["error"] is None
     assert document["parent_count"] >= 1
     assert document["child_count"] >= 1
+    assert document["vector_count"] == document["child_count"]
     assert (Path(settings.upload_dir) / accepted["id"] / "source.txt").exists()
 
     chunks = await client.get(f"{location}/chunks")

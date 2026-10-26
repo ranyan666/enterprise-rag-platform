@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS documents (
   page_count INTEGER NOT NULL DEFAULT 0,
   parent_count INTEGER NOT NULL DEFAULT 0,
   child_count INTEGER NOT NULL DEFAULT 0,
+  vector_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -99,6 +100,11 @@ class DocumentRepository:
     def init_schema(self) -> None:
         with self._session() as conn:
             conn.executescript(SCHEMA)
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(documents)")}
+            if "vector_count" not in columns:
+                conn.execute(
+                    "ALTER TABLE documents ADD COLUMN vector_count INTEGER NOT NULL DEFAULT 0"
+                )
 
     # ---------- documents ----------
 
@@ -242,10 +248,37 @@ class DocumentRepository:
                 """
                 UPDATE documents
                    SET status = 'ready', error = NULL, page_count = ?,
-                       parent_count = ?, child_count = ?, updated_at = ?
+                       parent_count = ?, child_count = ?, vector_count = 0, updated_at = ?
                  WHERE id = ?
                 """,
                 (page_count, len(parents), len(children), utcnow(), doc_id),
+            )
+
+    def set_vector_count(self, doc_id: str, vector_count: int) -> None:
+        with self._session() as conn:
+            cursor = conn.execute(
+                "UPDATE documents SET vector_count = ?, updated_at = ? WHERE id = ?",
+                (vector_count, utcnow(), doc_id),
+            )
+            if cursor.rowcount == 0:
+                raise DocumentNotFoundError(doc_id)
+
+    def reset_for_reindex(self, doc_id: str) -> None:
+        """清空分块与向量计数，把文档重新置为 pending。"""
+
+        with self._session() as conn:
+            exists = conn.execute("SELECT 1 FROM documents WHERE id = ?", (doc_id,)).fetchone()
+            if exists is None:
+                raise DocumentNotFoundError(doc_id)
+            conn.execute("DELETE FROM chunks WHERE document_id = ?", (doc_id,))
+            conn.execute(
+                """
+                UPDATE documents
+                   SET status = 'pending', error = NULL, page_count = 0,
+                       parent_count = 0, child_count = 0, vector_count = 0, updated_at = ?
+                 WHERE id = ?
+                """,
+                (utcnow(), doc_id),
             )
 
     def get_chunks(

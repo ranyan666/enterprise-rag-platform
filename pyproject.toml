@@ -33,4 +33,7 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-q"
+addopts = "-q -m 'not integration'"
+markers = [
+    "integration: 需要真实 Ollama/Milvus 的集成测试，默认跳过",
+]

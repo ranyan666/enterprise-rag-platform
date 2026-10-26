@@ -11,8 +11,10 @@ from app.api.documents import router as documents_router
 from app.api.health import router as health_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.providers.embedding import OllamaEmbedder
 from app.repositories.documents import DocumentRepository
 from app.services.documents import initialize_storage
+from app.services.vector_store import MilvusVectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level)
     repository = DocumentRepository(settings.sqlite_path)
+    embedder = OllamaEmbedder(
+        base_url=settings.ollama_base_url,
+        model=settings.embedding_model,
+        dim=settings.embedding_dim,
+        batch_size=settings.embedding_batch_size,
+        timeout=settings.embedding_timeout_seconds,
+    )
+    vector_store = MilvusVectorStore(
+        uri=settings.milvus_uri,
+        collection=settings.milvus_collection,
+        dim=settings.embedding_dim,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -31,6 +45,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            embedder.close()
+            vector_store.close()
             logger.info("应用已关闭")
 
     app = FastAPI(
@@ -40,6 +56,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.documents_repo = repository
+    app.state.embedder = embedder
+    app.state.vector_store = vector_store
     app.include_router(health_router)
     app.include_router(documents_router)
 

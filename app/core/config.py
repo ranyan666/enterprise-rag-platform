@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+_COLLECTION_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,254}$")
 
 
 class Settings(BaseSettings):
@@ -36,9 +38,12 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5:7b-instruct"
 
     # 模型与存储
-    embedding_model: str = "BAAI/bge-m3"
+    embedding_model: str = "bge-m3"
     embedding_dim: int = Field(default=1024, gt=0)
+    embedding_batch_size: int = Field(default=16, ge=1, le=256)
+    embedding_timeout_seconds: float = Field(default=120.0, gt=0)
     sqlite_path: str = "data/app.sqlite3"
+    milvus_collection: str = "document_chunks"
 
     # 文档入库
     upload_dir: str = "data/uploads"
@@ -70,6 +75,22 @@ class Settings(BaseSettings):
         if not directory:
             raise ValueError("upload_dir 不能为空")
         return directory
+
+    @field_validator("embedding_model")
+    @classmethod
+    def _normalize_embedding_model(cls, value: str) -> str:
+        model = value.strip()
+        if not model:
+            raise ValueError("embedding_model 不能为空")
+        return model
+
+    @field_validator("milvus_collection")
+    @classmethod
+    def _validate_collection_name(cls, value: str) -> str:
+        name = value.strip()
+        if not _COLLECTION_PATTERN.match(name):
+            raise ValueError("milvus_collection 只能包含字母、数字、下划线，且以字母或下划线开头")
+        return name
 
     @model_validator(mode="after")
     def _check_chunk_sizes(self) -> "Settings":

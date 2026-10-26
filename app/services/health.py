@@ -86,12 +86,16 @@ async def check_ollama(settings: Settings) -> DependencyStatus:
         return DependencyStatus(name="ollama", ok=False, latency_ms=_elapsed_ms(started), detail=_describe(exc))
 
     models = {item.get("name", "") for item in payload.get("models", []) if isinstance(item, dict)}
-    model_ready = any(name == settings.ollama_model or name.startswith(f"{settings.ollama_model}:") for name in models)
-    detail = (
-        f"已连接，模型 {settings.ollama_model} 就绪"
-        if model_ready
-        else f"已连接，但模型 {settings.ollama_model} 未下载（ollama pull {settings.ollama_model}）"
-    )
+    required_models = [settings.ollama_model, settings.embedding_model]
+    missing = [
+        model
+        for model in required_models
+        if not any(name == model or name.startswith(f"{model}:") for name in models)
+    ]
+    if missing:
+        detail = f"已连接，但模型未下载: {', '.join(missing)}（ollama pull {missing[0]}）"
+    else:
+        detail = f"已连接，模型 {', '.join(required_models)} 就绪"
     return DependencyStatus(name="ollama", ok=True, latency_ms=_elapsed_ms(started), detail=detail)
 
 

@@ -15,9 +15,11 @@ from pathlib import Path
 from fastapi import UploadFile
 
 from app.core.config import Settings
+from app.providers.embedding import Embedder, EmbeddingError
 from app.repositories.documents import DocumentRepository
 from app.services.chunking import build_chunks
 from app.services.parsing import parse_document
+from app.services.vector_store import VectorRecord, VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +118,13 @@ def initialize_storage(settings: Settings, repo: DocumentRepository) -> None:
         logger.warning("启动时发现 %d 个中断的文档，已标记为 failed", stale)
 
 
-def _process_document(doc_id: str, settings: Settings, repo: DocumentRepository) -> None:
+def _process_document(
+    doc_id: str,
+    settings: Settings,
+    repo: DocumentRepository,
+    embedder: Embedder,
+    vector_store: VectorStore,
+) -> None:
     started = time.perf_counter()
     try:
         repo.mark_status(doc_id, "processing")
@@ -140,11 +148,37 @@ def _process_document(doc_id: str, settings: Settings, repo: DocumentRepository)
             children=[asdict(chunk) for chunk in bundle.children],
             page_count=parsed.page_count,
         )
+
+        children = list(bundle.children)
+        embed_started = time.perf_counter()
+        vectors = embedder.embed([child.text for child in children])
+        if len(vectors) != len(children):
+            raise EmbeddingError(f"嵌入条数不匹配: 期望 {len(children)}，实际 {len(vectors)}")
+        records = [
+            VectorRecord(
+                id=child.id,
+                document_id=doc_id,
+                parent_id=child.parent_id or "",
+                text=child.text,
+                section=child.section,
+                page=child.page,
+                embedding=vector,
+            )
+            for child, vector in zip(children, vectors)
+        ]
+        vector_store.upsert_chunks(records)
+        repo.set_vector_count(doc_id, len(records))
+        embed_elapsed = time.perf_counter() - embed_started
+
         logger.info(
-            "文档处理完成 id=%s parents=%d children=%d 耗时=%.2fs",
+            "文档处理完成 id=%s parents=%d children=%d vectors=%d "
+            "parse+chunk=%.2fs embed+upsert=%.2fs total=%.2fs",
             doc_id,
             len(bundle.parents),
-            len(bundle.children),
+            len(children),
+            len(records),
+            embed_started - started,
+            embed_elapsed,
             time.perf_counter() - started,
         )
     except Exception as exc:  # noqa: BLE001 - 后台任务必须吞掉异常并记录状态
@@ -155,7 +189,20 @@ def _process_document(doc_id: str, settings: Settings, repo: DocumentRepository)
             logger.exception("写入失败状态时出错 id=%s", doc_id)
 
 
-async def process_document_async(doc_id: str, settings: Settings, repo: DocumentRepository) -> None:
-    """后台任务入口：CPU 密集的解析与分块放到线程池。"""
+async def process_document_async(
+    doc_id: str,
+    settings: Settings,
+    repo: DocumentRepository,
+    embedder: Embedder,
+    vector_store: VectorStore,
+) -> None:
+    """后台任务入口：解析、分块、嵌入与写向量都在线程池内完成。"""
 
-    await asyncio.to_thread(_process_document, doc_id, settings, repo)
+    await asyncio.to_thread(
+        _process_document,
+        doc_id,
+        settings,
+        repo,
+        embedder,
+        vector_store,
+    )

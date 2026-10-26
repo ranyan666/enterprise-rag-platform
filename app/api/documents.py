@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import shutil
 from pathlib import Path
 from typing import Literal
@@ -10,8 +11,9 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_app_settings, get_repo
+from app.api.deps import get_app_settings, get_embedder, get_repo, get_vector_store
 from app.core.config import Settings
+from app.providers.embedding import Embedder
 from app.repositories.documents import DocumentNotFoundError, DocumentRepository, DuplicateDocumentError
 from app.services.documents import (
     EmptyUploadError,
@@ -20,6 +22,9 @@ from app.services.documents import (
     save_upload,
 )
 from app.services.parsing import SUPPORTED_EXTENSIONS
+from app.services.vector_store import VectorStore
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
@@ -34,6 +39,11 @@ class UploadAccepted(BaseModel):
     location: str = Field(description="文档资源地址，可轮询状态")
 
 
+class ReindexAccepted(BaseModel):
+    id: str
+    status: str
+
+
 class DocumentOut(BaseModel):
     id: str
     filename: str
@@ -44,6 +54,7 @@ class DocumentOut(BaseModel):
     page_count: int
     parent_count: int
     child_count: int
+    vector_count: int
     created_at: str
     updated_at: str
 
@@ -88,6 +99,8 @@ async def upload_document(
     file: UploadFile = File(description="PDF / DOCX / MD / TXT 文件"),
     settings: Settings = Depends(get_app_settings),
     repo: DocumentRepository = Depends(get_repo),
+    embedder: Embedder = Depends(get_embedder),
+    vector_store: VectorStore = Depends(get_vector_store),
 ) -> UploadAccepted:
     ext = _extension(file.filename)
     if ext not in SUPPORTED_EXTENSIONS:
@@ -124,7 +137,14 @@ async def upload_document(
             detail={"message": "相同内容的文档已存在", "existing_id": exc.existing_id},
         ) from exc
 
-    background_tasks.add_task(process_document_async, saved.doc_id, settings, repo)
+    background_tasks.add_task(
+        process_document_async,
+        saved.doc_id,
+        settings,
+        repo,
+        embedder,
+        vector_store,
+    )
     location = f"/api/v1/documents/{saved.doc_id}"
     response.headers["Location"] = location
     return UploadAccepted(
@@ -162,6 +182,43 @@ async def get_document(doc_id: str, repo: DocumentRepository = Depends(get_repo)
     return DocumentOut(**document)
 
 
+@router.post(
+    "/{doc_id}/reindex",
+    response_model=ReindexAccepted,
+    status_code=202,
+    summary="重新解析并写入向量",
+)
+async def reindex_document(
+    doc_id: str,
+    background_tasks: BackgroundTasks,
+    settings: Settings = Depends(get_app_settings),
+    repo: DocumentRepository = Depends(get_repo),
+    embedder: Embedder = Depends(get_embedder),
+    vector_store: VectorStore = Depends(get_vector_store),
+) -> ReindexAccepted:
+    document = await asyncio.to_thread(repo.get_document, doc_id)
+    if document is None:
+        raise _not_found(doc_id)
+    if document["status"] == "processing":
+        raise HTTPException(status_code=409, detail="文档正在处理中，请稍后再试")
+
+    try:
+        await asyncio.to_thread(vector_store.delete_document, doc_id)
+    except Exception:  # noqa: BLE001 - 旧向量清理失败不阻塞重索引
+        logger.warning("重索引前清理旧向量失败 id=%s", doc_id, exc_info=True)
+
+    await asyncio.to_thread(repo.reset_for_reindex, doc_id)
+    background_tasks.add_task(
+        process_document_async,
+        doc_id,
+        settings,
+        repo,
+        embedder,
+        vector_store,
+    )
+    return ReindexAccepted(id=doc_id, status="pending")
+
+
 @router.get("/{doc_id}/chunks", response_model=ChunkList, summary="文档分块查询")
 async def list_chunks(
     doc_id: str,
@@ -190,6 +247,7 @@ async def delete_document(
     doc_id: str,
     settings: Settings = Depends(get_app_settings),
     repo: DocumentRepository = Depends(get_repo),
+    vector_store: VectorStore = Depends(get_vector_store),
 ) -> Response:
     document = await asyncio.to_thread(repo.get_document, doc_id)
     if document is None:
@@ -201,5 +259,9 @@ async def delete_document(
         await asyncio.to_thread(repo.delete_document, doc_id)
     except DocumentNotFoundError as exc:
         raise _not_found(doc_id) from exc
+    try:
+        await asyncio.to_thread(vector_store.delete_document, doc_id)
+    except Exception:  # noqa: BLE001 - 向量清理失败不阻塞删除，孤儿向量由检索侧过滤
+        logger.warning("删除文档向量失败 id=%s", doc_id, exc_info=True)
     shutil.rmtree(Path(settings.upload_dir) / document["id"], ignore_errors=True)
     return Response(status_code=204)

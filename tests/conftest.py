@@ -11,6 +11,7 @@ from app.core.config import Settings, get_settings
 from app.main import create_app
 from app.repositories.documents import DocumentRepository
 from app.services.documents import initialize_storage
+from tests.fakes import FakeEmbedder, FakeVectorStore
 
 # 宿主环境可能带有无关服务的变量（例如本机其他项目设置的 MILVUS_URI / REDIS_*），
 # 测试必须隔离，否则默认值断言会随机器状态漂移。
@@ -54,12 +55,24 @@ def settings(tmp_path) -> Settings:
 def app(settings: Settings):
     application = create_app(settings)
     initialize_storage(settings, application.state.documents_repo)
+    application.state.embedder = FakeEmbedder(dim=settings.embedding_dim)
+    application.state.vector_store = FakeVectorStore()
     yield application
 
 
 @pytest.fixture
 def repo(app) -> DocumentRepository:
     return app.state.documents_repo
+
+
+@pytest.fixture
+def embedder(app) -> FakeEmbedder:
+    return app.state.embedder
+
+
+@pytest.fixture
+def vector_store(app) -> FakeVectorStore:
+    return app.state.vector_store
 
 
 @pytest.fixture

@@ -17,7 +17,10 @@ def test_defaults_are_local_friendly() -> None:
     assert settings.redis_url == "redis://127.0.0.1:6379/0"
     assert settings.ollama_base_url == "http://127.0.0.1:11434"
     assert settings.ollama_model == "qwen2.5:7b-instruct"
+    assert settings.embedding_model == "bge-m3"
     assert settings.embedding_dim == 1024
+    assert settings.embedding_batch_size == 16
+    assert settings.milvus_collection == "document_chunks"
 
 
 def test_env_override_and_normalization(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -45,6 +48,11 @@ def test_non_positive_values_are_rejected() -> None:
 def test_empty_service_url_is_rejected() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, redis_url="   ")
+
+
+def test_invalid_collection_name_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, milvus_collection="bad-name")
 
 
 def test_get_settings_is_cached() -> None:
