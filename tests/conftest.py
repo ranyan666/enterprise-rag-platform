@@ -11,8 +11,9 @@ from app.core.config import Settings, get_settings
 from app.main import create_app
 from app.repositories.documents import DocumentRepository
 from app.services.documents import initialize_storage
+from app.services.qa import AnswerService
 from app.services.search import BM25Index, RetrievalService
-from tests.fakes import FakeEmbedder, FakeVectorStore
+from tests.fakes import FakeChatModel, FakeEmbedder, FakeVectorStore
 
 # 宿主环境可能带有无关服务的变量（例如本机其他项目设置的 MILVUS_URI / REDIS_*），
 # 测试必须隔离，否则默认值断言会随机器状态漂移。
@@ -67,6 +68,13 @@ def app(settings: Settings):
         result_limit=settings.retrieval_result_limit,
         rrf_k=settings.rrf_k,
     )
+    application.state.chat_model = FakeChatModel()
+    application.state.answer_service = AnswerService(
+        application.state.retrieval,
+        application.state.chat_model,
+        context_limit=settings.qa_context_limit,
+        context_chars=settings.qa_context_chars,
+    )
     yield application
 
 
@@ -88,6 +96,16 @@ def vector_store(app) -> FakeVectorStore:
 @pytest.fixture
 def retrieval(app) -> RetrievalService:
     return app.state.retrieval
+
+
+@pytest.fixture
+def chat_model(app) -> FakeChatModel:
+    return app.state.chat_model
+
+
+@pytest.fixture
+def answer_service(app) -> AnswerService:
+    return app.state.answer_service
 
 
 @pytest.fixture

@@ -123,6 +123,30 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/v1/search -Body $body -
 `RETRIEVAL_TOP_K`（每路召回数）、`RETRIEVAL_RESULT_LIMIT`（返回条数）、`RRF_K`。
 接口支持单次覆盖 `top_k` / `limit`。BM25 索引为进程内缓存，暂不支持多 worker 部署。
 
+## 问答（SSE）
+
+`POST /api/v1/query` 先走混合检索，再把父块按 `[1] [2] …` 编号拼进 prompt，调用本地 Qwen 流式作答。
+接口返回 `text/event-stream`，事件类型：
+
+| 事件 | 数据 | 说明 |
+| --- | --- | --- |
+| `meta` | `query`、`citations[]`、`retrieval_ms`、`candidates` | 引用清单（文件名/章节/页码/分数）与检索耗时 |
+| `token` | `text` | 增量文本，可多次 |
+| `done` | `answer`、`citations[]`、`timings`、`eval_count` | 完整答案与 `retrieval_ms` / `ttft_ms` / `total_ms` |
+| `error` | `message` | 检索或模型异常 |
+
+```powershell
+$json = '{"question":"权限模型包含什么","limit":5}'
+[System.IO.File]::WriteAllText("$PWD\.tmp\q.json", $json, [System.Text.UTF8Encoding]::new($false))
+curl.exe -N -X POST http://127.0.0.1:8000/api/v1/query -H "Content-Type: application/json" --data-binary "@$PWD\.tmp\q.json"
+```
+
+- prompt 要求模型只依据资料作答、用 `[n]` 标注来源；资料不足时明确回答不知道
+- 知识库为空或检索无结果时，不调用模型，直接流式返回固定提示
+- 模型异常会以 `error` 事件收尾，不会中断 HTTP 连接
+- 可调参数：`QA_CONTEXT_LIMIT`（引用条数）、`QA_CONTEXT_CHARS`（每条字符上限）、
+  `QA_MAX_TOKENS`、`QA_TEMPERATURE`、`OLLAMA_CHAT_TIMEOUT_SECONDS`
+
 ## 测试
 
 ```powershell
@@ -135,17 +159,17 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/v1/search -Body $body -
 
 ```
 app/
-  api/            # /health、/api/v1/documents、/api/v1/search
+  api/            # /health、/api/v1/documents、/api/v1/search、/api/v1/query
   core/           # 配置、日志
-  providers/      # 嵌入提供者（Ollama bge-m3）
+  providers/      # 嵌入（Ollama bge-m3）与对话（Qwen /api/chat）提供者
   repositories/   # SQLite 仓储（documents / chunks）
-  services/       # 解析、父子分块、向量库、混合检索、处理编排、依赖检查
-tests/            # pytest 用例（解析 / 分块 / 仓储 / 接口 / 向量 / 检索）
+  services/       # 解析、父子分块、向量库、混合检索、RAG 问答、处理编排
+tests/            # pytest 用例（解析 / 分块 / 仓储 / 接口 / 向量 / 检索 / 问答）
 docker-compose.yml # Milvus + etcd + MinIO + Redis
 ```
 
 ## 当前状态
 
-MVP 已完成 M1 骨架、M2 文档入库、M3 向量入库与 M4 混合检索：上传 → 解析 → 父子分块 → SQLite →
-BGE-M3 → Milvus，支持 reindex 与删除清理；检索侧 BM25 + 稠密 + RRF + 父块回填。M5 起接入
-Qwen 生成与 SSE 流式问答。
+MVP 已完成 M1 骨架、M2 文档入库、M3 向量入库、M4 混合检索与 M5 流式问答：上传 → 解析 →
+父子分块 → SQLite → BGE-M3 → Milvus；BM25 + 稠密 + RRF + 父块回填；Qwen 带引用流式作答
+（SSE，含 TTFT 打点）。M6 将补演示页面、端到端脚本与性能/召回评测。

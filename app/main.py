@@ -9,12 +9,15 @@ from fastapi import FastAPI
 
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
+from app.api.query import router as query_router
 from app.api.search import router as search_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.providers.chat import OllamaChatModel
 from app.providers.embedding import OllamaEmbedder
 from app.repositories.documents import DocumentRepository
 from app.services.documents import initialize_storage
+from app.services.qa import AnswerService
 from app.services.search import BM25Index, RetrievalService
 from app.services.vector_store import MilvusVectorStore
 
@@ -48,6 +51,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         result_limit=settings.retrieval_result_limit,
         rrf_k=settings.rrf_k,
     )
+    chat_model = OllamaChatModel(
+        base_url=settings.ollama_base_url,
+        model=settings.ollama_model,
+        temperature=settings.qa_temperature,
+        max_tokens=settings.qa_max_tokens,
+        timeout=settings.ollama_chat_timeout_seconds,
+    )
+    answer_service = AnswerService(
+        retrieval,
+        chat_model,
+        context_limit=settings.qa_context_limit,
+        context_chars=settings.qa_context_chars,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -58,6 +74,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             embedder.close()
             vector_store.close()
+            try:
+                await chat_model.close()
+            except Exception:  # noqa: BLE001 - 关闭阶段异常不影响退出
+                logger.warning("关闭对话模型客户端失败", exc_info=True)
             logger.info("应用已关闭")
 
     app = FastAPI(
@@ -70,9 +90,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.embedder = embedder
     app.state.vector_store = vector_store
     app.state.retrieval = retrieval
+    app.state.chat_model = chat_model
+    app.state.answer_service = answer_service
     app.include_router(health_router)
     app.include_router(documents_router)
     app.include_router(search_router)
+    app.include_router(query_router)
 
     @app.get("/", tags=["meta"], summary="服务信息")
     async def root() -> dict[str, str]:
@@ -83,6 +106,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "health": "/health",
             "documents": "/api/v1/documents",
             "search": "/api/v1/search",
+            "query": "/api/v1/query",
         }
 
     return app

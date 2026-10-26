@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     retrieval_result_limit: int = Field(default=8, ge=1, le=50)
     rrf_k: int = Field(default=60, ge=1, le=1000)
 
+    # 问答
+    qa_context_limit: int = Field(default=5, ge=1, le=20)
+    qa_context_chars: int = Field(default=1200, ge=100, le=8000)
+    qa_max_tokens: int = Field(default=512, ge=16, le=4096)
+    qa_temperature: float = Field(default=0.2, ge=0, le=1)
+    ollama_chat_timeout_seconds: float = Field(default=180.0, gt=0)
+
     @field_validator("log_level")
     @classmethod
     def _normalize_log_level(cls, value: str) -> str:

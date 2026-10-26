@@ -1,10 +1,11 @@
-"""测试用替身：嵌入器与向量库，保证单元测试完全离线。"""
+"""测试用替身：嵌入器、向量库与对话模型，保证单元测试完全离线。"""
 
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Sequence
+from typing import AsyncIterator, Sequence
 
+from app.providers.chat import ChatDelta
 from app.services.vector_store import DenseHit, VectorRecord
 
 
@@ -68,4 +69,30 @@ class FakeVectorStore:
         return hits[:limit]
 
     def close(self) -> None:
+        pass
+
+
+class FakeChatModel:
+    """按固定 token 序列产出流式响应，支持注入异常。"""
+
+    def __init__(
+        self,
+        tokens: Sequence[str] | None = None,
+        fail_with: Exception | None = None,
+    ) -> None:
+        self.tokens = list(
+            tokens if tokens is not None else ["根据", "资料", "，", "权限模型", "包含", "RBAC", "[1]"]
+        )
+        self.fail_with = fail_with
+        self.calls: list[list] = []
+
+    async def stream(self, messages: Sequence) -> AsyncIterator[ChatDelta]:
+        if self.fail_with is not None:
+            raise self.fail_with
+        self.calls.append(list(messages))
+        for token in self.tokens:
+            yield ChatDelta(text=token)
+        yield ChatDelta(text="", done=True, eval_count=len(self.tokens))
+
+    async def close(self) -> None:
         pass
