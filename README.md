@@ -147,6 +147,33 @@ curl.exe -N -X POST http://127.0.0.1:8000/api/v1/query -H "Content-Type: applica
 - 可调参数：`QA_CONTEXT_LIMIT`（引用条数）、`QA_CONTEXT_CHARS`（每条字符上限）、
   `QA_MAX_TOKENS`、`QA_TEMPERATURE`、`OLLAMA_CHAT_TIMEOUT_SECONDS`
 
+## 演示页面
+
+<http://127.0.0.1:8000/demo> 提供最小可用界面：上传文档 → 轮询处理状态 → 提问 → 流式答案与引用列表，
+并可查看/删除已入库文档。纯静态 HTML/CSS/JS，无构建步骤，由 FastAPI 托管在 `/static`。
+
+## 脚本与评测
+
+```powershell
+# 端到端冒烟：健康检查 → 上传 → 入库 → 检索 → SSE 问答 → 删除
+.\.venv\Scripts\python.exe scripts\e2e_smoke.py
+
+# 检索评测：清空本地知识库（--reset）、上传 eval/corpus、跑标注查询并输出报告
+.\.venv\Scripts\python.exe scripts\evaluate_retrieval.py --reset --keep-docs
+```
+
+最近一次评测（20 条标注查询、6 篇语料、`top_k=50`，报告在 `.tmp/eval_report.json`）：
+
+| 系统 | hit@1 | hit@3 | hit@5 | MRR@10 |
+| --- | --- | --- | --- | --- |
+| hybrid | 1.000 | 1.000 | 1.000 | 1.000 |
+| BM25-only | 0.900 | 0.950 | 0.950 | 0.925 |
+| dense-only | 1.000 | 1.000 | 1.000 | 1.000 |
+
+检索延迟 avg 53.9ms / p95 59.4ms。结论：混合检索在本语料上达到满分，相对 BM25 的 top-1 提升 10pp；
+稠密通道本身已经很强，因此“混合比纯向量提升 20%”需要更大、更偏长尾专有名词的评测集来验证，
+评测脚本与标注格式已就绪（见 `eval/README.md`）。
+
 ## 测试
 
 ```powershell
@@ -164,12 +191,15 @@ app/
   providers/      # 嵌入（Ollama bge-m3）与对话（Qwen /api/chat）提供者
   repositories/   # SQLite 仓储（documents / chunks）
   services/       # 解析、父子分块、向量库、混合检索、RAG 问答、处理编排
-tests/            # pytest 用例（解析 / 分块 / 仓储 / 接口 / 向量 / 检索 / 问答）
+  static/         # 演示页（index.html / app.css / app.js）
+tests/            # pytest 用例（解析 / 分块 / 仓储 / 接口 / 向量 / 检索 / 问答 / 评测指标）
+scripts/          # e2e_smoke.py、evaluate_retrieval.py
+eval/             # corpus/ 语料与 qa_set.jsonl 标注集
 docker-compose.yml # Milvus + etcd + MinIO + Redis
 ```
 
 ## 当前状态
 
-MVP 已完成 M1 骨架、M2 文档入库、M3 向量入库、M4 混合检索与 M5 流式问答：上传 → 解析 →
-父子分块 → SQLite → BGE-M3 → Milvus；BM25 + 稠密 + RRF + 父块回填；Qwen 带引用流式作答
-（SSE，含 TTFT 打点）。M6 将补演示页面、端到端脚本与性能/召回评测。
+MVP 六个里程碑全部完成：M1 骨架、M2 文档入库、M3 向量入库、M4 混合检索、M5 流式问答、M6 演示与评测。
+链路：上传 → 解析 → 父子分块 → SQLite → BGE-M3 → Milvus → BM25 + 稠密 + RRF → Qwen 带引用 SSE 回答；
+配套 `/demo` 页面、E2E 冒烟脚本与可复现的检索评测。

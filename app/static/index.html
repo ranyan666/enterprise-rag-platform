@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>企业知识库问答 · 演示</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>企业级智能文档检索与问答平台</h1>
+      <p class="subtitle">上传文档 → 混合检索 → 带引用的流式回答</p>
+    </div>
+    <span id="health" class="badge">检测中…</span>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>1. 上传文档</h2>
+      <form id="upload-form" class="row">
+        <input id="file" type="file" accept=".pdf,.docx,.md,.txt" required>
+        <button id="upload-btn" type="submit">上传并入库</button>
+      </form>
+      <p id="upload-status" class="status"></p>
+      <ul id="doc-list" class="doc-list"><li class="empty">正在加载…</li></ul>
+    </section>
+
+    <section class="panel">
+      <h2>2. 提问</h2>
+      <form id="chat-form" class="row">
+        <input id="question" placeholder="例如：权限模型如何控制字段权限？" maxlength="500" required>
+        <button id="chat-btn" type="submit">提问</button>
+      </form>
+      <p id="chat-status" class="status"></p>
+      <article id="answer" class="answer"></article>
+      <ol id="citations" class="citations"></ol>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

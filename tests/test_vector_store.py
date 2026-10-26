@@ -31,6 +31,7 @@ class FakeMilvusClient:
         self.upserts: list[tuple] = []
         self.deletes: list[tuple] = []
         self.queries: list[tuple] = []
+        self.searches: list[dict] = []
         self.schemas: list[_Schema] = []
         self.index_params: list[_IndexParams] = []
         self.closed = False
@@ -72,6 +73,43 @@ class FakeMilvusClient:
     ) -> list[dict]:
         self.queries.append((filter, output_fields, consistency_level))
         return [{"count(*)": 2}]
+
+    def search(
+        self,
+        collection_name: str,
+        data: list[list[float]],
+        anns_field: str,
+        limit: int,
+        output_fields: list[str],
+        search_params: dict,
+        consistency_level: str = "Bounded",
+    ) -> list[list[dict]]:
+        self.searches.append(
+            {
+                "collection_name": collection_name,
+                "data": data,
+                "anns_field": anns_field,
+                "limit": limit,
+                "output_fields": output_fields,
+                "search_params": search_params,
+                "consistency_level": consistency_level,
+            }
+        )
+        return [
+            [
+                {
+                    "id": "c1",
+                    "distance": 0.87,
+                    "entity": {
+                        "document_id": "d1",
+                        "parent_id": "p1",
+                        "text": "内容",
+                        "section": "第一章",
+                        "page": 2,
+                    },
+                }
+            ]
+        ]
 
     def close(self) -> None:
         self.closed = True
@@ -171,3 +209,30 @@ def test_close_releases_client() -> None:
     store.close()
 
     assert client.closed is True
+
+
+def test_search_maps_hits_and_uses_bounded_consistency() -> None:
+    client = FakeMilvusClient()
+    store = _store(client)
+    store.ensure_collection()
+
+    hits = store.search([0.1, 0.2, 0.3, 0.4], 5)
+
+    assert len(hits) == 1
+    assert hits[0].id == "c1"
+    assert hits[0].document_id == "d1"
+    assert hits[0].page == 2
+    assert hits[0].section == "第一章"
+    assert hits[0].score == pytest.approx(0.87)
+    request = client.searches[0]
+    assert request["consistency_level"] == "Bounded"
+    assert request["search_params"]["metric_type"] == "COSINE"
+    assert request["limit"] == 5
+
+
+def test_search_returns_empty_without_collection() -> None:
+    client = FakeMilvusClient()
+    store = _store(client)
+
+    assert store.search([0.0, 0.0, 0.0, 0.0], 5) == []
+    assert client.searches == []

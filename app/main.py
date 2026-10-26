@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
@@ -22,6 +25,8 @@ from app.services.search import BM25Index, RetrievalService
 from app.services.vector_store import MilvusVectorStore
 
 logger = logging.getLogger(__name__)
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -96,6 +101,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(documents_router)
     app.include_router(search_router)
     app.include_router(query_router)
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+    @app.get("/demo", include_in_schema=False)
+    async def demo() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
 
     @app.get("/", tags=["meta"], summary="服务信息")
     async def root() -> dict[str, str]:

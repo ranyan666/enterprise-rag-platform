@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any, Protocol, Sequence
 
@@ -22,6 +23,8 @@ ID_MAX_LENGTH = 64
 INDEX_TYPE = "HNSW"
 METRIC_TYPE = "COSINE"
 INDEX_PARAMS = {"M": 16, "efConstruction": 200}
+VISIBILITY_TIMEOUT_SECONDS = 10.0
+VISIBILITY_POLL_SECONDS = 0.1
 
 
 class VectorStoreError(RuntimeError):
@@ -153,7 +156,32 @@ class MilvusVectorStore:
             )
         except Exception as exc:  # noqa: BLE001 - 统一转领域异常
             raise VectorStoreError(f"写入 Milvus 失败: {exc}") from exc
+
+        expected: dict[str, int] = {}
+        for record in records:
+            expected[record.document_id] = expected.get(record.document_id, 0) + 1
+        for document_id, count in expected.items():
+            self._wait_visible(document_id, count)
         return len(records)
+
+    def _wait_visible(self, document_id: str, expected: int) -> bool:
+        """写入后等待向量对查询可见，避免"刚入库检索不到"的时序问题。"""
+
+        deadline = time.monotonic() + VISIBILITY_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            try:
+                if self.count(document_id) >= expected:
+                    return True
+            except VectorStoreError:
+                logger.warning("检查向量可见性失败 doc_id=%s", document_id, exc_info=True)
+            time.sleep(VISIBILITY_POLL_SECONDS)
+        logger.warning(
+            "向量写入后 %.0fs 内仍不可见 doc_id=%s expected=%d",
+            VISIBILITY_TIMEOUT_SECONDS,
+            document_id,
+            expected,
+        )
+        return False
 
     def delete_document(self, doc_id: str) -> None:
         if not self._ready and not self.client.has_collection(self._collection):

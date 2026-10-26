@@ -1,0 +1,20 @@
+{"query": "字段权限如何控制手机号展示", "expected_doc": "权限模型.md"}
+{"query": "RBAC 模型里用户和角色如何绑定", "expected_doc": "权限模型.md"}
+{"query": "数据权限按什么维度过滤", "expected_doc": "权限模型.md"}
+{"query": "新增权限需要谁审批", "expected_doc": "权限模型.md"}
+{"query": "包年包月怎么计费", "expected_doc": "计费与发票.md"}
+{"query": "发票申请后如何开具", "expected_doc": "计费与发票.md"}
+{"query": "对账差异怎么处理", "expected_doc": "计费与发票.md"}
+{"query": "怎么用 Docker Compose 启动 Milvus", "expected_doc": "部署运维.md"}
+{"query": "Milvus 数据备份保留多久", "expected_doc": "部署运维.md"}
+{"query": "发布失败怎么回滚", "expected_doc": "故障处理手册.md"}
+{"query": "接口超时应该检查什么", "expected_doc": "故障处理手册.md"}
+{"query": "告警规则在哪里配置", "expected_doc": "故障处理手册.md"}
+{"query": "订单表有哪些字段", "expected_doc": "数据字典.md"}
+{"query": "用户表手机号怎么存储", "expected_doc": "数据字典.md"}
+{"query": "新员工怎么申请 VPN", "expected_doc": "新员工入职指南.md"}
+{"query": "入职第一天需要开通哪些权限", "expected_doc": "新员工入职指南.md"}
+{"query": "ERR-5031 是什么错误", "expected_doc": "故障处理手册.md"}
+{"query": "ERR-7712 应该检查什么", "expected_doc": "故障处理手册.md"}
+{"query": "milvus.timeout_seconds 默认多少", "expected_doc": "部署运维.md"}
+{"query": "How can I work from home securely?", "expected_doc": "新员工入职指南.md"}
