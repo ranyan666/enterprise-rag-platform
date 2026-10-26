@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Sequence
 
-from app.services.vector_store import VectorRecord
+from app.services.vector_store import DenseHit, VectorRecord
 
 
 class FakeEmbedder:
@@ -30,6 +30,7 @@ class FakeVectorStore:
         self.records: dict[str, dict[str, VectorRecord]] = defaultdict(dict)
         self.deleted: list[str] = []
         self.fail_with: Exception | None = None
+        self.fail_search_with: Exception | None = None
 
     def upsert_chunks(self, records: Sequence[VectorRecord]) -> int:
         if self.fail_with is not None:
@@ -46,6 +47,25 @@ class FakeVectorStore:
         if doc_id is None:
             return sum(len(items) for items in self.records.values())
         return len(self.records.get(doc_id, {}))
+
+    def search(self, query_vector: Sequence[float], limit: int) -> list[DenseHit]:
+        if self.fail_search_with is not None:
+            raise self.fail_search_with
+        hits: list[DenseHit] = []
+        for items in self.records.values():
+            for record in items.values():
+                hits.append(
+                    DenseHit(
+                        id=record.id,
+                        document_id=record.document_id,
+                        parent_id=record.parent_id,
+                        text=record.text,
+                        section=record.section,
+                        page=record.page,
+                        score=0.9,
+                    )
+                )
+        return hits[:limit]
 
     def close(self) -> None:
         pass

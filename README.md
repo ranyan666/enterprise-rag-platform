@@ -10,6 +10,7 @@
 - Milvus
 - Qwen 大模型
 - BGE-M3 嵌入（Ollama 本地推理）
+- jieba + rank_bm25（关键词检索）
 - Redis
 
 ## 规划能力
@@ -103,6 +104,25 @@ curl.exe -s -X DELETE "http://127.0.0.1:8000/api/v1/documents/$id"
 Invoke-RestMethod -Method Post "http://127.0.0.1:8000/api/v1/documents/$id/reindex"
 ```
 
+## 混合检索
+
+`POST /api/v1/search` 同时跑两路召回，再用 RRF 融合，最后回填父块：
+
+- **BM25 关键词**：jieba 搜索模式分词 + 停用词过滤，内存索引，按仓储指纹自动重建，只索引 ready 文档
+- **稠密向量**：查询文本经 `bge-m3` 编码后在 Milvus 按 COSINE 检索
+- **RRF 融合**：`score = Σ 1 / (k + rank)`，默认 `k=60`，避免两种分数量纲不可比
+- **父块回填**：命中子块后按 `parent_id` 回 SQLite 取完整父段，`parent_text` 用于后续生成
+
+```powershell
+$body = @{ query = "权限模型包含哪些内容"; limit = 5 } | ConvertTo-Json
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/v1/search -Body $body -ContentType "application/json"
+```
+
+返回字段：`results[]`（`parent_text`/`child_text`/`score`/`bm25_rank`/`dense_rank`/来源文档）、
+`timings`（两路召回与融合耗时）、`candidates`（各阶段候选数）。可调参数：
+`RETRIEVAL_TOP_K`（每路召回数）、`RETRIEVAL_RESULT_LIMIT`（返回条数）、`RRF_K`。
+接口支持单次覆盖 `top_k` / `limit`。BM25 索引为进程内缓存，暂不支持多 worker 部署。
+
 ## 测试
 
 ```powershell
@@ -115,16 +135,17 @@ Invoke-RestMethod -Method Post "http://127.0.0.1:8000/api/v1/documents/$id/reind
 
 ```
 app/
-  api/            # /health 与 /api/v1/documents
+  api/            # /health、/api/v1/documents、/api/v1/search
   core/           # 配置、日志
   providers/      # 嵌入提供者（Ollama bge-m3）
   repositories/   # SQLite 仓储（documents / chunks）
-  services/       # 解析、父子分块、向量库、处理编排、依赖检查
-tests/            # pytest 用例（解析 / 分块 / 仓储 / 接口 / 向量链路）
+  services/       # 解析、父子分块、向量库、混合检索、处理编排、依赖检查
+tests/            # pytest 用例（解析 / 分块 / 仓储 / 接口 / 向量 / 检索）
 docker-compose.yml # Milvus + etcd + MinIO + Redis
 ```
 
 ## 当前状态
 
-MVP 已完成 M1 骨架、M2 文档入库与 M3 向量入库：上传 → 解析 → 父子分块 → SQLite → BGE-M3 向量 →
-Milvus，支持失败重索引与删除清理。M4 起实现 BM25 + 稠密召回的 RRF 混合检索。
+MVP 已完成 M1 骨架、M2 文档入库、M3 向量入库与 M4 混合检索：上传 → 解析 → 父子分块 → SQLite →
+BGE-M3 → Milvus，支持 reindex 与删除清理；检索侧 BM25 + 稠密 + RRF + 父块回填。M5 起接入
+Qwen 生成与 SSE 流式问答。

@@ -11,6 +11,7 @@ from app.core.config import Settings, get_settings
 from app.main import create_app
 from app.repositories.documents import DocumentRepository
 from app.services.documents import initialize_storage
+from app.services.search import BM25Index, RetrievalService
 from tests.fakes import FakeEmbedder, FakeVectorStore
 
 # 宿主环境可能带有无关服务的变量（例如本机其他项目设置的 MILVUS_URI / REDIS_*），
@@ -57,6 +58,15 @@ def app(settings: Settings):
     initialize_storage(settings, application.state.documents_repo)
     application.state.embedder = FakeEmbedder(dim=settings.embedding_dim)
     application.state.vector_store = FakeVectorStore()
+    application.state.retrieval = RetrievalService(
+        application.state.documents_repo,
+        application.state.embedder,
+        application.state.vector_store,
+        bm25_index=BM25Index(),
+        top_k=settings.retrieval_top_k,
+        result_limit=settings.retrieval_result_limit,
+        rrf_k=settings.rrf_k,
+    )
     yield application
 
 
@@ -73,6 +83,11 @@ def embedder(app) -> FakeEmbedder:
 @pytest.fixture
 def vector_store(app) -> FakeVectorStore:
     return app.state.vector_store
+
+
+@pytest.fixture
+def retrieval(app) -> RetrievalService:
+    return app.state.retrieval
 
 
 @pytest.fixture

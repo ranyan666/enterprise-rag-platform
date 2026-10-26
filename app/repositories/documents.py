@@ -311,6 +311,54 @@ class DocumentRepository:
         with self._session() as conn:
             return int(conn.execute(sql, params).fetchone()["n"])
 
+    # ---------- 检索 ----------
+
+    def retrieval_fingerprint(self) -> tuple[int, int, str]:
+        """用于判断 BM25 内存索引是否需要重建。"""
+
+        with self._session() as conn:
+            documents = conn.execute(
+                "SELECT COUNT(*) AS n, COALESCE(MAX(updated_at), '') AS ts "
+                "FROM documents WHERE status = 'ready'"
+            ).fetchone()
+            chunks = conn.execute("SELECT COUNT(*) AS n FROM chunks").fetchone()
+        return int(documents["n"]), int(chunks["n"]), str(documents["ts"])
+
+    def list_ready_child_chunks(self) -> list[dict[str, Any]]:
+        with self._session() as conn:
+            rows = conn.execute(
+                """
+                SELECT c.id, c.document_id, c.parent_id, c.text, c.section, c.page, c.ordinal
+                  FROM chunks c
+                  JOIN documents d ON d.id = c.document_id
+                 WHERE c.level = 'child' AND d.status = 'ready'
+                 ORDER BY c.document_id, c.ordinal
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_chunks_by_ids(self, chunk_ids: Sequence[str]) -> dict[str, dict[str, Any]]:
+        if not chunk_ids:
+            return {}
+        placeholders = ",".join("?" for _ in chunk_ids)
+        with self._session() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM chunks WHERE id IN ({placeholders})",
+                list(chunk_ids),
+            ).fetchall()
+        return {row["id"]: dict(row) for row in rows}
+
+    def get_documents_by_ids(self, doc_ids: Sequence[str]) -> dict[str, dict[str, Any]]:
+        if not doc_ids:
+            return {}
+        placeholders = ",".join("?" for _ in doc_ids)
+        with self._session() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM documents WHERE id IN ({placeholders})",
+                list(doc_ids),
+            ).fetchall()
+        return {row["id"]: dict(row) for row in rows}
+
     def _ensure_document(self, doc_id: str) -> None:
         with self._session() as conn:
             row = conn.execute("SELECT 1 FROM documents WHERE id = ?", (doc_id,)).fetchone()

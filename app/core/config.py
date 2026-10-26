@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     child_chunk_chars: int = Field(default=400, ge=100)
     child_chunk_overlap: int = Field(default=80, ge=0)
 
+    # 混合检索
+    retrieval_top_k: int = Field(default=20, ge=1, le=100)
+    retrieval_result_limit: int = Field(default=8, ge=1, le=50)
+    rrf_k: int = Field(default=60, ge=1, le=1000)
+
     @field_validator("log_level")
     @classmethod
     def _normalize_log_level(cls, value: str) -> str:

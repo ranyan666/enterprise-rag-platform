@@ -7,6 +7,7 @@ from fastapi import Request
 from app.core.config import Settings
 from app.providers.embedding import Embedder
 from app.repositories.documents import DocumentRepository
+from app.services.search import RetrievalService
 from app.services.vector_store import VectorStore
 
 
@@ -24,3 +25,7 @@ def get_embedder(request: Request) -> Embedder:
 
 def get_vector_store(request: Request) -> VectorStore:
     return request.app.state.vector_store
+
+
+def get_retrieval(request: Request) -> RetrievalService:
+    return request.app.state.retrieval

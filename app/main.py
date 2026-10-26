@@ -9,11 +9,13 @@ from fastapi import FastAPI
 
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
+from app.api.search import router as search_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.providers.embedding import OllamaEmbedder
 from app.repositories.documents import DocumentRepository
 from app.services.documents import initialize_storage
+from app.services.search import BM25Index, RetrievalService
 from app.services.vector_store import MilvusVectorStore
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         collection=settings.milvus_collection,
         dim=settings.embedding_dim,
     )
+    retrieval = RetrievalService(
+        repository,
+        embedder,
+        vector_store,
+        bm25_index=BM25Index(),
+        top_k=settings.retrieval_top_k,
+        result_limit=settings.retrieval_result_limit,
+        rrf_k=settings.rrf_k,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -58,8 +69,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.documents_repo = repository
     app.state.embedder = embedder
     app.state.vector_store = vector_store
+    app.state.retrieval = retrieval
     app.include_router(health_router)
     app.include_router(documents_router)
+    app.include_router(search_router)
 
     @app.get("/", tags=["meta"], summary="服务信息")
     async def root() -> dict[str, str]:
@@ -69,6 +82,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "docs": "/docs",
             "health": "/health",
             "documents": "/api/v1/documents",
+            "search": "/api/v1/search",
         }
 
     return app

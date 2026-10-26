@@ -50,12 +50,25 @@ class VectorRecord:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class DenseHit:
+    id: str
+    document_id: str
+    parent_id: str
+    text: str
+    section: str | None
+    page: int | None
+    score: float
+
+
 class VectorStore(Protocol):
     def upsert_chunks(self, records: Sequence[VectorRecord]) -> int: ...
 
     def delete_document(self, doc_id: str) -> None: ...
 
     def count(self, doc_id: str | None = None) -> int: ...
+
+    def search(self, query_vector: Sequence[float], limit: int) -> list[DenseHit]: ...
 
 
 class MilvusVectorStore:
@@ -169,6 +182,41 @@ class MilvusVectorStore:
         except Exception as exc:  # noqa: BLE001
             raise VectorStoreError(f"统计 Milvus 向量失败: {exc}") from exc
         return int(rows[0]["count(*)"]) if rows else 0
+
+    def search(self, query_vector: Sequence[float], limit: int) -> list[DenseHit]:
+        if limit <= 0:
+            return []
+        if not self._ready and not self.client.has_collection(self._collection):
+            return []
+        self.ensure_collection()
+        try:
+            raw_results = self.client.search(
+                collection_name=self._collection,
+                data=[list(query_vector)],
+                anns_field="embedding",
+                limit=limit,
+                output_fields=["document_id", "parent_id", "text", "section", "page"],
+                search_params={"metric_type": METRIC_TYPE, "params": {"ef": max(64, limit)}},
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise VectorStoreError(f"Milvus 向量检索失败: {exc}") from exc
+
+        hits: list[DenseHit] = []
+        for item in raw_results[0] if raw_results else []:
+            entity = item.get("entity") or {}
+            page = entity.get("page")
+            hits.append(
+                DenseHit(
+                    id=str(item.get("id", "")),
+                    document_id=str(entity.get("document_id", "")),
+                    parent_id=str(entity.get("parent_id", "")),
+                    text=str(entity.get("text", "")),
+                    section=entity.get("section") or None,
+                    page=None if page in (None, PAGE_UNKNOWN) else int(page),
+                    score=float(item.get("distance", 0.0)),
+                )
+            )
+        return hits
 
     def close(self) -> None:
         client, self._client = self._client, None

@@ -25,6 +25,7 @@ coverage.xml
 # 本地构建临时目录
 .tmp/
 pytest-of-*/
+jieba.cache
 
 # ---------- 环境变量与密钥 ----------
 .env

@@ -169,3 +169,27 @@ def test_init_schema_migrates_legacy_table(tmp_path: Path) -> None:
     repository.init_schema()
 
     assert repository.get_document("old")["vector_count"] == 0
+
+
+def test_retrieval_queries(tmp_path: Path) -> None:
+    repository = _repo(tmp_path)
+    _create(repository)
+    repository.replace_chunks(
+        "doc-1",
+        parents=[_chunk("p1", "parent", 1)],
+        children=[_chunk("c1", "child", 1, "p1")],
+        page_count=1,
+    )
+
+    ready_count, chunk_count, _ = repository.retrieval_fingerprint()
+    assert (ready_count, chunk_count) == (1, 2)
+    assert [item["id"] for item in repository.list_ready_child_chunks()] == ["c1"]
+    assert repository.get_chunks_by_ids(["p1"])["p1"]["level"] == "parent"
+    assert repository.get_chunks_by_ids([]) == {}
+    assert repository.get_documents_by_ids(["doc-1"])["doc-1"]["filename"] == "guide.txt"
+    assert repository.get_documents_by_ids([]) == {}
+
+    repository.mark_status("doc-1", "failed")
+
+    assert repository.retrieval_fingerprint()[0] == 0
+    assert repository.list_ready_child_chunks() == []

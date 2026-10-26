@@ -35,6 +35,10 @@ def test_milvus_roundtrip() -> None:
         assert store.upsert_chunks([record]) == 1
         assert store.count("doc-1") == 1
 
+        hits = store.search([0.1, 0.2, 0.3, 0.4], 5)
+        assert hits and hits[0].id == "chunk-1"
+        assert hits[0].document_id == "doc-1"
+
         store.delete_document("doc-1")
         assert store.count("doc-1") == 0
     finally:
