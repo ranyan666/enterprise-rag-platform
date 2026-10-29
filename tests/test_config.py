@@ -22,6 +22,10 @@ def test_defaults_are_local_friendly() -> None:
     assert settings.embedding_batch_size == 16
     assert settings.milvus_collection == "document_chunks"
     assert settings.chat_backend == "langchain"
+    assert settings.reranker_enabled is False
+    assert settings.reranker_backend == "embedding"
+    assert settings.reranker_model == "BAAI/bge-reranker-base"
+    assert settings.reranker_top_n == 20
 
 
 def test_env_override_and_normalization(monkeypatch: pytest.MonkeyPatch) -> None:

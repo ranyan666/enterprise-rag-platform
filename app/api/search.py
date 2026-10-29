@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import get_retrieval
 from app.providers.embedding import EmbeddingError
+from app.providers.reranker import RerankError
 from app.services.search import RetrievalService
 from app.services.vector_store import VectorStoreError
 
@@ -20,6 +21,7 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500, description="检索问题")
     top_k: int | None = Field(default=None, ge=1, le=100, description="每路召回数量，默认取配置")
     limit: int | None = Field(default=None, ge=1, le=50, description="最终返回条数，默认取配置")
+    rerank: bool | None = Field(default=None, description="是否启用 cross-encoder 重排，默认取配置")
 
 
 class SearchHit(BaseModel):
@@ -34,6 +36,7 @@ class SearchHit(BaseModel):
     dense_rank: int | None = None
     bm25_score: float | None = None
     dense_score: float | None = None
+    rerank_score: float | None = None
     child_text: str
     parent_text: str
 
@@ -41,6 +44,7 @@ class SearchHit(BaseModel):
 class SearchTimings(BaseModel):
     bm25_ms: float
     dense_ms: float
+    rerank_ms: float = 0.0
     fusion_ms: float
     total_ms: float
 
@@ -56,6 +60,7 @@ class SearchResponse(BaseModel):
     results: list[SearchHit]
     timings: SearchTimings
     candidates: SearchCandidates
+    reranked: bool = False
 
 
 @router.post("/search", response_model=SearchResponse, summary="混合检索（BM25 + 向量 + RRF）")
@@ -69,9 +74,14 @@ async def search(
 
     try:
         outcome = await asyncio.to_thread(
-            lambda: retrieval.search(query, top_k=payload.top_k, limit=payload.limit)
+            lambda: retrieval.search(
+                query,
+                top_k=payload.top_k,
+                limit=payload.limit,
+                rerank=payload.rerank,
+            )
         )
-    except (EmbeddingError, VectorStoreError) as exc:
+    except (EmbeddingError, VectorStoreError, RerankError) as exc:
         raise HTTPException(status_code=503, detail=f"检索依赖不可用: {exc}") from exc
 
     return SearchResponse(
@@ -83,4 +93,5 @@ async def search(
             dense=outcome.dense_candidates,
             fused=outcome.fused_candidates,
         ),
+        reranked=outcome.reranked,
     )

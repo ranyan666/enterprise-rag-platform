@@ -21,6 +21,7 @@ from app.core.logging import configure_logging
 from app.providers.chat import OllamaChatModel
 from app.providers.embedding import OllamaEmbedder
 from app.providers.langchain_chat import LangChainChatModel
+from app.providers.reranker import CrossEncoderReranker, EmbeddingReranker
 from app.repositories.documents import DocumentRepository
 from app.services.documents import initialize_storage
 from app.services.qa import AnswerService
@@ -50,6 +51,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         collection=settings.milvus_collection,
         dim=settings.embedding_dim,
     )
+    if not settings.reranker_enabled:
+        reranker = None
+    elif settings.reranker_backend == "cross-encoder":
+        reranker = CrossEncoderReranker(
+            settings.reranker_model,
+            device=settings.reranker_device,
+        )
+    else:
+        reranker = EmbeddingReranker(embedder)
     retrieval = RetrievalService(
         repository,
         embedder,
@@ -58,6 +68,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         top_k=settings.retrieval_top_k,
         result_limit=settings.retrieval_result_limit,
         rrf_k=settings.rrf_k,
+        reranker=reranker,
+        rerank_top_n=settings.reranker_top_n,
+        rerank_enabled=settings.reranker_enabled,
     )
     if settings.chat_backend == "langchain":
         chat_model = LangChainChatModel(
@@ -84,9 +97,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         context_chars=settings.qa_context_chars,
     )
     logger.info(
-        "对话后端=%s model=%s",
+        "对话后端=%s model=%s 重排=%s",
         settings.chat_backend,
         settings.ollama_model,
+        f"{settings.reranker_backend}:{settings.reranker_top_n}" if settings.reranker_enabled else "off",
     )
 
     @asynccontextmanager

@@ -24,3 +24,23 @@
 {"query": "ERR-6104 是什么错误", "expected_doc": "错误码-ERR-6104.md"}
 {"query": "ERR-6105 是什么错误", "expected_doc": "错误码-ERR-6105.md"}
 {"query": "ERR-6106 是什么错误", "expected_doc": "错误码-ERR-6106.md"}
+{"query": "订单服务的限流是多少", "expected_doc": "订单服务接口说明.md"}
+{"query": "支付服务的 SLA 是多少", "expected_doc": "支付服务接口说明.md"}
+{"query": "库存服务的限流是多少 QPS", "expected_doc": "库存服务接口说明.md"}
+{"query": "搜索服务是哪个团队负责的", "expected_doc": "搜索服务接口说明.md"}
+{"query": "推荐服务的冷启动策略是哪次发布上线的", "expected_doc": "推荐服务接口说明.md"}
+{"query": "消息服务支持延迟消息吗", "expected_doc": "消息服务接口说明.md"}
+{"query": "哪些数据属于 L4 机密", "expected_doc": "数据安全分级.md"}
+{"query": "审计日志在线保留多久", "expected_doc": "审计日志.md"}
+{"query": "KMS 密钥多久轮换一次", "expected_doc": "密钥管理.md"}
+{"query": "监控指标的采集间隔是多少", "expected_doc": "监控告警.md"}
+{"query": "灰度发布分几个阶段", "expected_doc": "灰度发布.md"}
+{"query": "差旅报销需要事前申请吗", "expected_doc": "报销流程.md"}
+{"query": "申请外接显示器需要谁审批", "expected_doc": "设备申请.md"}
+{"query": "payment_order 表有哪些字段", "expected_doc": "支付表结构.md"}
+{"query": "stock_item 的 version 字段有什么用", "expected_doc": "库存表结构.md"}
+{"query": "coupon 表支持哪些类型", "expected_doc": "优惠券表结构.md"}
+{"query": "导出 L3 数据需要什么审批", "expected_doc": "数据安全分级.md"}
+{"query": "密钥泄露后多久内要吊销", "expected_doc": "密钥管理.md"}
+{"query": "发布异常会自动回滚吗", "expected_doc": "灰度发布.md"}
+{"query": "餐饮报销单笔限额多少", "expected_doc": "报销流程.md"}

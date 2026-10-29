@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from scripts.evaluate_retrieval import hit, percentile, rank_for, reciprocal_rank, summarize
+import math
+
+import pytest
+
+from scripts.evaluate_retrieval import hit, ndcg, percentile, rank_for, reciprocal_rank, summarize
 
 
 def _result(filename: str, *, bm25: int | None = None, dense: int | None = None) -> dict:
@@ -49,6 +53,14 @@ def test_summarize_averages() -> None:
     assert metrics["hit@3"] == 0.5
     assert metrics["hit@5"] == 0.5
     assert metrics["mrr@10"] == (1 + 1 / 3 + 0 + 1 / 8) / 4
+
+
+def test_ndcg_uses_log_discount() -> None:
+    assert ndcg(1) == 1.0
+    assert ndcg(2) == pytest.approx(1 / math.log2(3))
+    assert ndcg(10) == pytest.approx(1 / math.log2(11))
+    assert ndcg(11) == 0.0
+    assert ndcg(None) == 0.0
 
 
 def test_percentile_handles_boundaries() -> None:

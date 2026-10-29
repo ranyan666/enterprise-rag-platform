@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     retrieval_result_limit: int = Field(default=8, ge=1, le=50)
     rrf_k: int = Field(default=60, ge=1, le=1000)
 
+    # 重排
+    reranker_enabled: bool = False
+    reranker_backend: str = "embedding"
+    reranker_model: str = "BAAI/bge-reranker-base"
+    reranker_top_n: int = Field(default=20, ge=1, le=100)
+    reranker_device: str = "cpu"
+
     # 问答
     qa_context_limit: int = Field(default=5, ge=1, le=20)
     qa_context_chars: int = Field(default=1200, ge=100, le=8000)
@@ -111,6 +118,14 @@ class Settings(BaseSettings):
         backend = value.strip().lower()
         if backend not in {"langchain", "http"}:
             raise ValueError("chat_backend 只能是 langchain 或 http")
+        return backend
+
+    @field_validator("reranker_backend")
+    @classmethod
+    def _validate_reranker_backend(cls, value: str) -> str:
+        backend = value.strip().lower()
+        if backend not in {"embedding", "cross-encoder"}:
+            raise ValueError("reranker_backend 只能是 embedding 或 cross-encoder")
         return backend
 
     @model_validator(mode="after")

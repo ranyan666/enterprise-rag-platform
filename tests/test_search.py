@@ -164,7 +164,7 @@ def test_retrieval_service_backfills_parent_text(tmp_path) -> None:
     assert result.dense_rank == 1
     assert outcome.bm25_candidates == 1
     assert outcome.dense_candidates == 1
-    assert set(outcome.timings) == {"bm25_ms", "dense_ms", "fusion_ms", "total_ms"}
+    assert set(outcome.timings) == {"bm25_ms", "dense_ms", "rerank_ms", "fusion_ms", "total_ms"}
 
 
 def test_retrieval_filters_hits_from_failed_documents(tmp_path) -> None:

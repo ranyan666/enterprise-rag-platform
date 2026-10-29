@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import AsyncIterator, Sequence
 
 from app.providers.chat import ChatDelta
+from app.providers.reranker import RerankError
 from app.services.vector_store import DenseHit, VectorRecord
 
 
@@ -96,3 +97,25 @@ class FakeChatModel:
 
     async def close(self) -> None:
         pass
+
+
+class FakeReranker:
+    """按给定分数或逆序返回，便于验证重排是否生效。"""
+
+    def __init__(
+        self,
+        scores: Sequence[float] | None = None,
+        fail_with: Exception | None = None,
+    ) -> None:
+        self.scores = list(scores) if scores is not None else None
+        self.fail_with = fail_with
+        self.calls: list[tuple[str, list[str]]] = []
+
+    def score(self, query: str, documents: Sequence[str]) -> list[float]:
+        if self.fail_with is not None:
+            raise RerankError(str(self.fail_with))
+        passages = list(documents)
+        self.calls.append((query, passages))
+        if self.scores is not None:
+            return self.scores[: len(passages)]
+        return [float(len(passages) - index) for index in range(len(passages))]

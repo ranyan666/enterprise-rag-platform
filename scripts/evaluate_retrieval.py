@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 import sys
 import time
@@ -48,6 +49,14 @@ def reciprocal_rank(rank: int | None, k: int = 10) -> float:
     return 1.0 / rank if rank is not None and rank <= k else 0.0
 
 
+def ndcg(rank: int | None, k: int = 10) -> float:
+    """二值相关性下的 nDCG@k（IDCG=1）。"""
+
+    if rank is None or rank > k:
+        return 0.0
+    return 1.0 / math.log2(rank + 1)
+
+
 def percentile(values: Sequence[float], ratio: float) -> float:
     if not values:
         return 0.0
@@ -64,6 +73,7 @@ def summarize(ranks: Iterable[int | None]) -> dict[str, float]:
         "hit@3": sum(hit(rank, 3) for rank in collected) / total,
         "hit@5": sum(hit(rank, 5) for rank in collected) / total,
         "mrr@10": sum(reciprocal_rank(rank, 10) for rank in collected) / total,
+        "ndcg@10": sum(ndcg(rank, 10) for rank in collected) / total,
     }
 
 
@@ -136,6 +146,7 @@ def main() -> int:
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--reset", action="store_true", help="评测前清空知识库（仅本地环境）")
     parser.add_argument("--keep-docs", action="store_true", help="评测后保留本次上传的语料")
+    parser.add_argument("--rerank", action="store_true", help="追加 hybrid + 重排的对比（服务端需启用重排）")
     args = parser.parse_args()
 
     queries = [
@@ -153,6 +164,8 @@ def main() -> int:
     hybrid_ranks: list[int | None] = []
     bm25_ranks: list[int | None] = []
     dense_ranks: list[int | None] = []
+    rerank_ranks: list[int | None] = []
+    rerank_latencies: list[float] = []
 
     with httpx.Client(base_url=args.base_url.rstrip("/"), timeout=120.0) as client:
         health = client.get("/health")
@@ -171,10 +184,15 @@ def main() -> int:
 
         for item in queries:
             started = time.perf_counter()
-            response = client.post(
-                "/api/v1/search",
-                json={"query": item["query"], "top_k": args.top_k, "limit": args.limit},
-            )
+            baseline_payload = {
+                "query": item["query"],
+                "top_k": args.top_k,
+                "limit": args.limit,
+            }
+            if args.rerank:
+                # 显式关闭重排，避免服务端默认开启时把 baseline 也重排了
+                baseline_payload["rerank"] = False
+            response = client.post("/api/v1/search", json=baseline_payload)
             response.raise_for_status()
             latency = (time.perf_counter() - started) * 1000
             latencies.append(latency)
@@ -187,6 +205,24 @@ def main() -> int:
             hybrid_ranks.append(hybrid_rank)
             bm25_ranks.append(bm25_rank)
             dense_ranks.append(dense_rank)
+
+            rerank_rank = None
+            if args.rerank:
+                rerank_started = time.perf_counter()
+                rerank_response = client.post(
+                    "/api/v1/search",
+                    json={
+                        "query": item["query"],
+                        "top_k": args.top_k,
+                        "limit": args.limit,
+                        "rerank": True,
+                    },
+                )
+                rerank_response.raise_for_status()
+                rerank_latencies.append((time.perf_counter() - rerank_started) * 1000)
+                rerank_rank = rank_for(rerank_response.json()["results"], expected, "hybrid")
+                rerank_ranks.append(rerank_rank)
+
             details.append(
                 {
                     "query": item["query"],
@@ -194,6 +230,7 @@ def main() -> int:
                     "hybrid_rank": hybrid_rank,
                     "bm25_rank": bm25_rank,
                     "dense_rank": dense_rank,
+                    "rerank_rank": rerank_rank,
                     "latency_ms": round(latency, 2),
                 }
             )
@@ -201,23 +238,39 @@ def main() -> int:
         hybrid = summarize(hybrid_ranks)
         bm25 = summarize(bm25_ranks)
         dense = summarize(dense_ranks)
+        reranked = summarize(rerank_ranks) if args.rerank else None
 
         print(f"\n=== 检索评测（{len(queries)} 条查询，top_k={args.top_k}）===")
-        print(f"{'system':<8}{'hit@1':>8}{'hit@3':>8}{'hit@5':>8}{'mrr@10':>9}")
-        for name, metrics in (("hybrid", hybrid), ("bm25", bm25), ("dense", dense)):
+        print(f"{'system':<10}{'hit@1':>8}{'hit@3':>8}{'hit@5':>8}{'mrr@10':>9}{'ndcg@10':>9}")
+        rows = [("hybrid", hybrid), ("bm25", bm25), ("dense", dense)]
+        if reranked is not None:
+            rows.append(("hybrid+rr", reranked))
+        for name, metrics in rows:
             print(
-                f"{name:<8}{metrics['hit@1']:>8.3f}{metrics['hit@3']:>8.3f}"
-                f"{metrics['hit@5']:>8.3f}{metrics['mrr@10']:>9.3f}"
+                f"{name:<10}{metrics['hit@1']:>8.3f}{metrics['hit@3']:>8.3f}"
+                f"{metrics['hit@5']:>8.3f}{metrics['mrr@10']:>9.3f}{metrics['ndcg@10']:>9.3f}"
             )
         print(
             f"\n延迟: avg={statistics.mean(latencies):.1f}ms "
             f"p95={percentile(latencies, 0.95):.1f}ms"
         )
+        if rerank_latencies:
+            print(
+                f"重排延迟: avg={statistics.mean(rerank_latencies):.1f}ms "
+                f"p95={percentile(rerank_latencies, 0.95):.1f}ms"
+            )
         print(
             "hybrid vs dense: "
             f"hit@5 {(hybrid['hit@5'] - dense['hit@5']) * 100:+.1f}pp, "
             f"mrr@10 {hybrid['mrr@10'] - dense['mrr@10']:+.3f}"
         )
+        if reranked is not None:
+            print(
+                "hybrid+rerank vs hybrid: "
+                f"hit@1 {(reranked['hit@1'] - hybrid['hit@1']) * 100:+.1f}pp, "
+                f"mrr@10 {reranked['mrr@10'] - hybrid['mrr@10']:+.3f}, "
+                f"ndcg@10 {reranked['ndcg@10'] - hybrid['ndcg@10']:+.3f}"
+            )
 
         report = {
             "queries": len(queries),
@@ -230,6 +283,12 @@ def main() -> int:
             "corpus_docs": len(owned) + len(reused),
             "details": details,
         }
+        if reranked is not None:
+            report["metrics"]["hybrid_rerank"] = reranked
+            report["rerank_latency"] = {
+                "avg_ms": round(statistics.mean(rerank_latencies), 2),
+                "p95_ms": round(percentile(rerank_latencies, 0.95), 2),
+            }
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"[OK] 报告已写入 {args.report}")

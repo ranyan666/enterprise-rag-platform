@@ -166,17 +166,37 @@ curl.exe -N -X POST http://127.0.0.1:8000/api/v1/query -H "Content-Type: applica
 .\.venv\Scripts\python.exe scripts\evaluate_retrieval.py --reset --keep-docs
 ```
 
-最近一次评测（26 条标注查询、12 篇语料、`top_k=50`，报告在 `.tmp/eval_report.json`）：
+最近一次评测（46 条标注查询、28 篇语料、`top_k=50`，报告在 `.tmp/eval_report.json`）：
 
-| 系统 | hit@1 | hit@3 | hit@5 | MRR@10 |
-| --- | --- | --- | --- | --- |
-| hybrid | 1.000 | 1.000 | 1.000 | 1.000 |
-| BM25-only | 0.923 | 0.962 | 0.962 | 0.942 |
-| dense-only | 1.000 | 1.000 | 1.000 | 1.000 |
+| 系统 | hit@1 | hit@3 | hit@5 | MRR@10 | nDCG@10 |
+| --- | --- | --- | --- | --- | --- |
+| hybrid | 0.913 | 0.978 | 0.978 | 0.948 | 0.961 |
+| BM25-only | 0.848 | 0.913 | 0.957 | 0.890 | 0.907 |
+| dense-only | 0.957 | 1.000 | 1.000 | 0.978 | 0.984 |
+| hybrid + rerank | 0.935 | 1.000 | 1.000 | 0.964 | 0.973 |
 
-检索延迟 avg 80.9ms / p95 56.4ms（首次查询含模型加载）。结论：混合检索相对 BM25 的 top-1
-提升 7.7pp、MRR 提升 0.058；但稠密通道在本语料上同样满分，**没有测出相对纯向量的提升**，
-因此不建议在简历里写“召回 +20%”。评测脚本与标注格式见 `eval/README.md`，扩大语料后可复测。
+检索延迟 avg 66.8ms / p95 84.9ms；启用重排后 avg 1072.6ms / p95 1310.1ms。
+
+结论（如实记录）：
+- 混合检索相对 BM25 的 top-1 提升 6.5pp，但**稠密通道反而最强**（0.957），说明当前 RRF 融合会被 BM25 噪声拖累；
+- 二阶段重排让 hybrid 的 top-1 从 0.913 提升到 0.935（+2.2pp），但仍低于 dense-only，且每次查询多花约 1.1s；
+- 因此**不能写“召回 +20%”或“重排带来显著提升”**。要做实这个数字，下一步应调融合权重（dense 加权）、扩大语料并优化重排候选集。
+
+评测脚本与标注格式见 `eval/README.md`。
+
+## 重排（可选）
+
+`POST /api/v1/search` 支持 `rerank` 开关；服务端配置：
+
+| 配置 | 默认 | 说明 |
+| --- | --- | --- |
+| `RERANKER_ENABLED` | `false` | 是否启用二阶段重排 |
+| `RERANKER_BACKEND` | `embedding` | `embedding` 复用 bge-m3 对父块重算相似度；`cross-encoder` 用 bge-reranker-base |
+| `RERANKER_MODEL` | `BAAI/bge-reranker-base` | cross-encoder 模型名或本地目录 |
+| `RERANKER_TOP_N` | `20` | 送进重排的候选数 |
+
+cross-encoder 需要额外安装：`pip install -e ".[rerank]"`。重排在本机 CPU 上约 1.1s/次，
+因此默认关闭；评测脚本可加 `--rerank` 对比开启前后的指标。
 
 ## 测试
 
@@ -192,7 +212,7 @@ curl.exe -N -X POST http://127.0.0.1:8000/api/v1/query -H "Content-Type: applica
 app/
   api/            # /health、/api/v1/documents、/api/v1/search、/api/v1/query
   core/           # 配置、日志
-  providers/      # 嵌入（Ollama bge-m3）与对话（Qwen /api/chat）提供者
+  providers/      # 嵌入（bge-m3）、对话（Qwen/LangChain）、重排（bge-reranker）
   repositories/   # SQLite 仓储（documents / chunks）
   services/       # 解析、父子分块、向量库、混合检索、RAG 问答、处理编排
   static/         # 演示页（index.html / app.css / app.js）

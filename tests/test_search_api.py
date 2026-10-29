@@ -35,7 +35,7 @@ async def test_search_returns_fused_results_with_parent_context(client) -> None:
     assert first["parent_text"]
     assert first["child_text"]
     assert first["score"] > 0
-    assert set(body["timings"]) == {"bm25_ms", "dense_ms", "fusion_ms", "total_ms"}
+    assert set(body["timings"]) == {"bm25_ms", "dense_ms", "rerank_ms", "fusion_ms", "total_ms"}
     assert body["candidates"]["fused"] >= 1
 
 

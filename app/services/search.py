@@ -19,6 +19,7 @@ import jieba
 from rank_bm25 import BM25Plus
 
 from app.providers.embedding import Embedder
+from app.providers.reranker import Reranker
 from app.repositories.documents import DocumentRepository
 from app.services.vector_store import DenseHit, VectorStore
 
@@ -90,6 +91,7 @@ class SearchResult:
     dense_score: float | None
     child_text: str
     parent_text: str
+    rerank_score: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +101,7 @@ class SearchOutcome:
     dense_candidates: int
     fused_candidates: int
     timings: dict[str, float]
+    reranked: bool = False
 
 
 class BM25Index:
@@ -230,6 +233,9 @@ class RetrievalService:
         top_k: int = 20,
         result_limit: int = 8,
         rrf_k: int = 60,
+        reranker: Reranker | None = None,
+        rerank_top_n: int = 20,
+        rerank_enabled: bool = False,
     ) -> None:
         self._repo = repo
         self._embedder = embedder
@@ -238,12 +244,25 @@ class RetrievalService:
         self._top_k = top_k
         self._result_limit = result_limit
         self._rrf_k = rrf_k
+        self._reranker = reranker
+        self._rerank_top_n = rerank_top_n
+        self._rerank_enabled = rerank_enabled
 
-    def search(self, query: str, *, top_k: int | None = None, limit: int | None = None) -> SearchOutcome:
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int | None = None,
+        limit: int | None = None,
+        rerank: bool | None = None,
+    ) -> SearchOutcome:
         started = time.perf_counter()
         text = (query or "").strip()
         if not text:
             return SearchOutcome((), 0, 0, 0, {"total_ms": 0.0})
+
+        use_rerank = self._rerank_enabled if rerank is None else rerank
+        use_rerank = use_rerank and self._reranker is not None
 
         recall_k = top_k or self._top_k
         result_limit = limit or self._result_limit
@@ -266,10 +285,34 @@ class RetrievalService:
             for candidate in fused
             if documents.get(candidate.document_id, {}).get("status") == "ready"
         ]
-        selected = ready[:result_limit]
-        parent_ids = list(dict.fromkeys(c.parent_id for c in selected if c.parent_id))
+
+        pool = ready[: self._rerank_top_n] if use_rerank else ready[:result_limit]
+        parent_ids = list(dict.fromkeys(c.parent_id for c in pool if c.parent_id))
         parents = self._repo.get_chunks_by_ids(parent_ids)
 
+        rerank_scores: dict[str, float] = {}
+        if use_rerank and self._reranker is not None and pool:
+            rerank_started = time.perf_counter()
+            passage_texts = [
+                (parents.get(candidate.parent_id or "", {}) or {}).get("text")
+                or candidate.child_text
+                for candidate in pool
+            ]
+            scores = self._reranker.score(text, passage_texts)
+            rerank_scores = {
+                candidate.chunk_id: score
+                for candidate, score in zip(pool, scores)
+            }
+            pool = sorted(
+                pool,
+                key=lambda candidate: rerank_scores.get(candidate.chunk_id, 0.0),
+                reverse=True,
+            )
+            rerank_ms = (time.perf_counter() - rerank_started) * 1000
+        else:
+            rerank_ms = 0.0
+
+        selected = pool[:result_limit]
         results: list[SearchResult] = []
         for candidate in selected:
             document = documents.get(candidate.document_id, {})
@@ -289,6 +332,9 @@ class RetrievalService:
                     dense_score=round(candidate.dense_score, 4) if candidate.dense_score is not None else None,
                     child_text=candidate.child_text,
                     parent_text=parent.get("text") or candidate.child_text,
+                    rerank_score=round(rerank_scores[candidate.chunk_id], 6)
+                    if candidate.chunk_id in rerank_scores
+                    else None,
                 )
             )
         fusion_ms = (time.perf_counter() - fusion_started) * 1000
@@ -301,7 +347,9 @@ class RetrievalService:
             timings={
                 "bm25_ms": round(bm25_ms, 2),
                 "dense_ms": round(dense_ms, 2),
+                "rerank_ms": round(rerank_ms, 2),
                 "fusion_ms": round(fusion_ms, 2),
                 "total_ms": round((time.perf_counter() - started) * 1000, 2),
             },
+            reranked=use_rerank and bool(rerank_scores),
         )
