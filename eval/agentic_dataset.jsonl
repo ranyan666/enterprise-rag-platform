@@ -1,0 +1,25 @@
+{"id": 1, "question": "字段权限如何控制手机号展示", "type": "in_scope", "expected_route": "vector", "expected_doc": "权限模型.md"}
+{"id": 2, "question": "RBAC 模型里用户和角色如何绑定", "type": "in_scope", "expected_route": "vector", "expected_doc": "权限模型.md"}
+{"id": 3, "question": "发票申请后如何开具", "type": "in_scope", "expected_route": "vector", "expected_doc": "计费与发票.md"}
+{"id": 4, "question": "对账差异怎么处理", "type": "in_scope", "expected_route": "vector", "expected_doc": "计费与发票.md"}
+{"id": 5, "question": "Milvus 的端口是多少", "type": "in_scope", "expected_route": "vector", "expected_doc": "部署运维.md"}
+{"id": 6, "question": "Milvus 数据备份保留多久", "type": "in_scope", "expected_route": "vector", "expected_doc": "部署运维.md"}
+{"id": 7, "question": "灰度发布分几个阶段", "type": "in_scope", "expected_route": "vector", "expected_doc": "灰度发布.md"}
+{"id": 8, "question": "餐饮报销单笔限额多少", "type": "in_scope", "expected_route": "vector", "expected_doc": "报销流程.md"}
+{"id": 9, "question": "KMS 密钥多久轮换一次", "type": "in_scope", "expected_route": "vector", "expected_doc": "密钥管理.md"}
+{"id": 10, "question": "stock_item 的 version 字段有什么用", "type": "in_scope", "expected_route": "vector", "expected_doc": "库存表结构.md"}
+{"id": 11, "question": "订单服务的限流是多少", "type": "in_scope", "expected_route": "vector", "expected_doc": "订单服务接口说明.md"}
+{"id": 12, "question": "ERR-6103 是什么错误", "type": "in_scope", "expected_route": "vector", "expected_doc": "错误码-ERR-6103.md"}
+{"id": 13, "question": "你好", "type": "direct", "expected_route": "direct"}
+{"id": 14, "question": "你是谁", "type": "direct", "expected_route": "direct"}
+{"id": 15, "question": "Python 列表推导怎么写", "type": "direct", "expected_route": "direct"}
+{"id": 16, "question": "1+1 等于几", "type": "direct", "expected_route": "direct"}
+{"id": 17, "question": "给我讲个笑话", "type": "direct", "expected_route": "direct"}
+{"id": 18, "question": "我的工资是多少", "type": "out_of_scope", "expected_route": "refuse"}
+{"id": 19, "question": "公司今年 Q3 营收多少", "type": "out_of_scope", "expected_route": "refuse"}
+{"id": 20, "question": "CEO 的手机号是多少", "type": "out_of_scope", "expected_route": "refuse"}
+{"id": 21, "question": "我的绩效评分是多少", "type": "out_of_scope", "expected_route": "refuse"}
+{"id": 22, "question": "竞争对手的报价是多少", "type": "out_of_scope", "expected_route": "refuse"}
+{"id": 23, "question": "它的备份策略呢", "type": "multi_turn", "expected_route": "vector", "seed_questions": ["Milvus 的端口是多少"], "expected_doc": "部署运维.md"}
+{"id": 24, "question": "那数据权限呢", "type": "multi_turn", "expected_route": "vector", "seed_questions": ["字段权限怎么控制手机号"], "expected_doc": "权限模型.md"}
+{"id": 25, "question": "那个能限制列显示的东西是什么", "type": "hard", "expected_route": "vector", "expected_doc": "权限模型.md"}

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import AsyncIterator, Sequence
 
+from app.agentic.nodes import CritiqueResult, RouteDecision
 from app.providers.chat import ChatDelta
 from app.providers.reranker import RerankError
 from app.services.vector_store import DenseHit, VectorRecord
@@ -119,3 +120,48 @@ class FakeReranker:
         if self.scores is not None:
             return self.scores[: len(passages)]
         return [float(len(passages) - index) for index in range(len(passages))]
+
+
+class FakeAgentLLM:
+    """Agent 流程用的可编排 LLM 替身。"""
+
+    def __init__(
+        self,
+        *,
+        route: str = "vector",
+        relevant: Sequence[bool] | None = None,
+        rewrite_text: str = "改写后的检索词",
+        condense_text: str = "消解指代后的问题",
+        tokens: Sequence[str] | None = None,
+    ) -> None:
+        self.route = route
+        self.relevant = list(relevant if relevant is not None else [True])
+        self.rewrite_text = rewrite_text
+        self.condense_text = condense_text
+        self.tokens = list(tokens if tokens is not None else ["答案", "[1]"])
+        self.text_prompts: list[str] = []
+        self.json_prompts: list[str] = []
+        self.stream_prompts: list[str] = []
+
+    async def text(self, prompt: str, *, system: str | None = None) -> str:
+        self.text_prompts.append(prompt)
+        if "改写为独立完整的问题" in prompt:
+            return self.condense_text
+        if "重写检索词" in prompt:
+            return self.rewrite_text
+        return "直接回答"
+
+    async def json(self, prompt: str, schema: type) -> object | None:
+        self.json_prompts.append(prompt)
+        if schema is RouteDecision:
+            return RouteDecision(route=self.route, reason="测试路由")
+        if schema is CritiqueResult:
+            value = self.relevant.pop(0) if self.relevant else True
+            return CritiqueResult(relevant=value, reason="测试自检")
+        return None
+
+    async def stream(self, prompt: str, *, system: str | None = None) -> AsyncIterator[str]:
+        self.stream_prompts.append(prompt)
+        for token in self.tokens:
+            yield token
+

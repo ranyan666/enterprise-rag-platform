@@ -23,6 +23,7 @@ dependencies = [
     "rank-bm25>=0.2",
     "langchain-core>=1.0,<2.0",
     "langchain-ollama>=1.0,<2.0",
+    "langgraph>=1.0,<2.0",
 ]
 
 [project.optional-dependencies]

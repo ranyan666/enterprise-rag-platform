@@ -5,6 +5,7 @@
 ## 技术栈
 
 - Python
+- LangGraph（Agentic 编排）
 - LangChain（ChatPromptTemplate + ChatOllama 流式生成）
 - FastAPI
 - Milvus
@@ -151,6 +152,55 @@ curl.exe -N -X POST http://127.0.0.1:8000/api/v1/query -H "Content-Type: applica
 - 可调参数：`QA_CONTEXT_LIMIT`（引用条数）、`QA_CONTEXT_CHARS`（每条字符上限）、
   `QA_MAX_TOKENS`、`QA_TEMPERATURE`、`OLLAMA_CHAT_TIMEOUT_SECONDS`
 
+## Agentic RAG（LangGraph）
+
+在原有线性 RAG 之上增加“路由 → 检索 → 自检 → 改写”的决策闭环，入口是 `POST /api/v1/chat`：
+
+```mermaid
+flowchart TD
+    Q[用户提问] --> C[指代消解 / 多轮改写]
+    C --> R{Query Router}
+    R -->|闲聊 / 无需检索| D[直接生成]
+    R -->|超出知识范围| F[礼貌拒答]
+    R -->|需要检索| S[混合检索 BM25 + Milvus]
+    S --> CR{Self-Critique 相关性自检}
+    CR -->|相关| G[LLM 生成 SSE 流式]
+    CR -->|不相关且 rewrite < 2| W[Query 改写] --> S
+    CR -->|达到改写上限| G
+```
+
+事件流：`start`、`condense`、`route`、`retrieval`、`critique`、`rewrite`、`token`、`done`、`error`。
+
+关键设计（面试可讲）：
+
+- **分层模型**：路由/自检/改写都用 `temperature=0` 的 Qwen（本地 Ollama 替代 DashScope turbo/plus），
+  只有生成阶段流式输出；用本地模型是为了离线可跑，接口抽象保留换云端的空间。
+- **防死循环**：`rewrite_count` 进状态，条件边严格判断 `< AGENT_MAX_REWRITES`（默认 2）；
+  达到上限后带着“资料不足”的提示生成，避免无限重试烧 token。
+- **编排与能力分离**：检索、父子分块、RRF 融合仍是自研实现，LangGraph 只负责任务编排与条件边。
+- **会话记忆**：Redis 只存最近 3 轮消息（TTL 30 分钟），不存整个图状态；state 只放可序列化字段。
+- **可观测**：每次请求返回路由、改写次数、引用与 TTFT，评测脚本据此统计。
+
+配置：`AGENT_ENABLED`、`AGENT_MAX_REWRITES`、`AGENT_HISTORY_TURNS`、`AGENT_HISTORY_TTL_SECONDS`。
+
+评测（25 条固定集，`scripts/evaluate_agentic.py`）：
+
+| 指标 | 结果 |
+| --- | --- |
+| 路由准确率 | 1.000（25/25） |
+| in_scope 引用 top-1 | 0.917（11/12） |
+| direct 零检索 | 5/5 |
+| out_of_scope 拒答 | 5/5 |
+| 多轮指代引用命中 | 2/2 |
+| 困难问题（vague query） | 1/1，触发 2 次改写后命中 |
+| 平均改写轮次 | 0.13 |
+| TTFT | p50 923ms，最大 3.36s（触发反思的困难问题） |
+
+诚实说明：线性 RAG 基线在 out_of_scope 上也会回答“未找到”，关键词判定的拒答率同样为 100%，
+因此**不应宣传“拒答率 0%→100%”**；Agentic 的价值主要在路由前置（闲聊不检索）、多轮消解和
+可观测的反思过程。in_scope 有 1 条（“订单服务的限流是多少”）被错误码文档挤到 top-1 之外，
+说明检索融合仍有优化空间。
+
 ## 演示页面
 
 <http://127.0.0.1:8000/demo> 提供最小可用界面：上传文档 → 轮询处理状态 → 提问 → 流式答案与引用列表，
@@ -210,20 +260,24 @@ cross-encoder 需要额外安装：`pip install -e ".[rerank]"`。重排在本�
 
 ```
 app/
-  api/            # /health、/api/v1/documents、/api/v1/search、/api/v1/query
+  agentic/        # LangGraph 状态、节点、图编排与会话记忆
+  api/            # /health、/documents、/search、/query、/chat
   core/           # 配置、日志
   providers/      # 嵌入（bge-m3）、对话（Qwen/LangChain）、重排（bge-reranker）
   repositories/   # SQLite 仓储（documents / chunks）
   services/       # 解析、父子分块、向量库、混合检索、RAG 问答、处理编排
   static/         # 演示页（index.html / app.css / app.js）
-tests/            # pytest 用例（解析 / 分块 / 仓储 / 接口 / 向量 / 检索 / 问答 / 评测指标）
-scripts/          # e2e_smoke.py、evaluate_retrieval.py
-eval/             # corpus/ 语料与 qa_set.jsonl 标注集
+tests/            # pytest 用例（解析 / 分块 / 仓储 / 接口 / 向量 / 检索 / 问答 / Agentic）
+scripts/          # e2e_smoke.py、evaluate_retrieval.py、evaluate_agentic.py
+eval/             # corpus/ 语料、qa_set.jsonl、agentic_dataset.jsonl
 docker-compose.yml # Milvus + etcd + MinIO + Redis
 ```
 
 ## 当前状态
 
-MVP 六个里程碑全部完成：M1 骨架、M2 文档入库、M3 向量入库、M4 混合检索、M5 流式问答、M6 演示与评测。
-链路：上传 → 解析 → 父子分块 → SQLite → BGE-M3 → Milvus → BM25 + 稠密 + RRF → Qwen 带引用 SSE 回答；
-配套 `/demo` 页面、E2E 冒烟脚本与可复现的检索评测。
+MVP 六个里程碑全部完成，并在线性 RAG 之上完成 Agentic RAG 升级：M1 骨架、M2 文档入库、
+M3 向量入库、M4 混合检索、M5 流式问答、M6 演示与评测，以及 LangGraph 编排的
+意图路由 / 自检反思 / 多轮指代消解。
+链路：上传 → 解析 → 父子分块 → SQLite → BGE-M3 → Milvus → BM25 + 稠密 + RRF →
+（Agentic：路由 → 检索 → 自检 → 改写）→ Qwen 带引用 SSE 回答；配套 `/demo` 页面、
+E2E 冒烟脚本、检索评测与 Agentic 评测。

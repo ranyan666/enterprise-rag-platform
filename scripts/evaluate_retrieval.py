@@ -61,7 +61,7 @@ def percentile(values: Sequence[float], ratio: float) -> float:
     if not values:
         return 0.0
     ordered = sorted(values)
-    index = min(len(ordered) - 1, max(0, int(round((len(ordered) - 1) * ratio))))
+    index = min(len(ordered) - 1, max(0, math.ceil(ratio * len(ordered)) - 1))
     return ordered[index]
 
 

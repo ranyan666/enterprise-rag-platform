@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     ollama_chat_timeout_seconds: float = Field(default=180.0, gt=0)
     chat_backend: str = "langchain"
 
+    # Agentic RAG
+    agent_enabled: bool = True
+    agent_max_rewrites: int = Field(default=2, ge=0, le=5)
+    agent_history_turns: int = Field(default=3, ge=1, le=10)
+    agent_history_ttl_seconds: int = Field(default=1800, ge=60)
+
     @field_validator("log_level")
     @classmethod
     def _normalize_log_level(cls, value: str) -> str:

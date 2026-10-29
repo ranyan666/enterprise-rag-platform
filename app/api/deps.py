@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import Request
 
+from app.agentic.graph import AgenticRagService
 from app.core.config import Settings
 from app.providers.chat import ChatModel
 from app.providers.embedding import Embedder
@@ -39,3 +40,7 @@ def get_chat_model(request: Request) -> ChatModel:
 
 def get_answer_service(request: Request) -> AnswerService:
     return request.app.state.answer_service
+
+
+def get_agent_service(request: Request) -> AgenticRagService:
+    return request.app.state.agentic_service
