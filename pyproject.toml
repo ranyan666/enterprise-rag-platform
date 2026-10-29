@@ -21,6 +21,8 @@ dependencies = [
     "python-multipart>=0.0.9",
     "jieba>=0.42",
     "rank-bm25>=0.2",
+    "langchain-core>=1.0,<2.0",
+    "langchain-ollama>=1.0,<2.0",
 ]
 
 [project.optional-dependencies]

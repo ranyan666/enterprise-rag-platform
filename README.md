@@ -5,7 +5,7 @@
 ## 技术栈
 
 - Python
-- LangChain
+- LangChain（ChatPromptTemplate + ChatOllama 流式生成）
 - FastAPI
 - Milvus
 - Qwen 大模型
@@ -141,6 +141,10 @@ $json = '{"question":"权限模型包含什么","limit":5}'
 curl.exe -N -X POST http://127.0.0.1:8000/api/v1/query -H "Content-Type: application/json" --data-binary "@$PWD\.tmp\q.json"
 ```
 
+- prompt 使用 LangChain `ChatPromptTemplate` 管理，生成通过 `ChatOllama` 流式输出；
+  `CHAT_BACKEND=langchain|http` 可在 LangChain 与原生 HTTP 客户端之间切换
+- 只在“提示词 + 模型客户端”这一层使用 LangChain；检索、父子分块与 Milvus 读写保留自研实现，
+  便于精确控制向量字段、父块回填与可见性时序
 - prompt 要求模型只依据资料作答、用 `[n]` 标注来源；资料不足时明确回答不知道
 - 知识库为空或检索无结果时，不调用模型，直接流式返回固定提示
 - 模型异常会以 `error` 事件收尾，不会中断 HTTP 连接

@@ -10,6 +10,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from langchain_ollama import ChatOllama
+
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
 from app.api.query import router as query_router
@@ -18,6 +20,7 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.providers.chat import OllamaChatModel
 from app.providers.embedding import OllamaEmbedder
+from app.providers.langchain_chat import LangChainChatModel
 from app.repositories.documents import DocumentRepository
 from app.services.documents import initialize_storage
 from app.services.qa import AnswerService
@@ -56,18 +59,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         result_limit=settings.retrieval_result_limit,
         rrf_k=settings.rrf_k,
     )
-    chat_model = OllamaChatModel(
-        base_url=settings.ollama_base_url,
-        model=settings.ollama_model,
-        temperature=settings.qa_temperature,
-        max_tokens=settings.qa_max_tokens,
-        timeout=settings.ollama_chat_timeout_seconds,
-    )
+    if settings.chat_backend == "langchain":
+        chat_model = LangChainChatModel(
+            ChatOllama(
+                model=settings.ollama_model,
+                base_url=settings.ollama_base_url,
+                temperature=settings.qa_temperature,
+                num_predict=settings.qa_max_tokens,
+                keep_alive="10m",
+            )
+        )
+    else:
+        chat_model = OllamaChatModel(
+            base_url=settings.ollama_base_url,
+            model=settings.ollama_model,
+            temperature=settings.qa_temperature,
+            max_tokens=settings.qa_max_tokens,
+            timeout=settings.ollama_chat_timeout_seconds,
+        )
     answer_service = AnswerService(
         retrieval,
         chat_model,
         context_limit=settings.qa_context_limit,
         context_chars=settings.qa_context_chars,
+    )
+    logger.info(
+        "对话后端=%s model=%s",
+        settings.chat_backend,
+        settings.ollama_model,
     )
 
     @asynccontextmanager

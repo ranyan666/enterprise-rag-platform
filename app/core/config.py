@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     qa_max_tokens: int = Field(default=512, ge=16, le=4096)
     qa_temperature: float = Field(default=0.2, ge=0, le=1)
     ollama_chat_timeout_seconds: float = Field(default=180.0, gt=0)
+    chat_backend: str = "langchain"
 
     @field_validator("log_level")
     @classmethod
@@ -103,6 +104,14 @@ class Settings(BaseSettings):
         if not _COLLECTION_PATTERN.match(name):
             raise ValueError("milvus_collection 只能包含字母、数字、下划线，且以字母或下划线开头")
         return name
+
+    @field_validator("chat_backend")
+    @classmethod
+    def _validate_chat_backend(cls, value: str) -> str:
+        backend = value.strip().lower()
+        if backend not in {"langchain", "http"}:
+            raise ValueError("chat_backend 只能是 langchain 或 http")
+        return backend
 
     @model_validator(mode="after")
     def _check_chunk_sizes(self) -> "Settings":

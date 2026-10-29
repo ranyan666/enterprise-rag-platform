@@ -21,6 +21,7 @@ def test_defaults_are_local_friendly() -> None:
     assert settings.embedding_dim == 1024
     assert settings.embedding_batch_size == 16
     assert settings.milvus_collection == "document_chunks"
+    assert settings.chat_backend == "langchain"
 
 
 def test_env_override_and_normalization(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -53,6 +54,13 @@ def test_empty_service_url_is_rejected() -> None:
 def test_invalid_collection_name_is_rejected() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, milvus_collection="bad-name")
+
+
+def test_invalid_chat_backend_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, chat_backend="openai")
+
+    assert Settings(_env_file=None, chat_backend="HTTP").chat_backend == "http"
 
 
 def test_get_settings_is_cached() -> None:
