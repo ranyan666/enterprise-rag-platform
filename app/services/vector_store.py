@@ -157,22 +157,49 @@ class MilvusVectorStore:
         except Exception as exc:  # noqa: BLE001 - 统一转领域异常
             raise VectorStoreError(f"写入 Milvus 失败: {exc}") from exc
 
-        expected: dict[str, int] = {}
+        expected: dict[str, list[VectorRecord]] = {}
         for record in records:
-            expected[record.document_id] = expected.get(record.document_id, 0) + 1
-        for document_id, count in expected.items():
-            self._wait_visible(document_id, count)
+            expected.setdefault(record.document_id, []).append(record)
+        for document_id, document_records in expected.items():
+            self._wait_visible(
+                document_id,
+                len(document_records),
+                document_records[0].embedding,
+            )
         return len(records)
 
-    def _wait_visible(self, document_id: str, expected: int) -> bool:
-        """写入后等待向量对查询可见，避免"刚入库检索不到"的时序问题。"""
+    def _wait_visible(self, document_id: str, expected: int, probe_vector: Sequence[float]) -> bool:
+        """写入后等待向量对检索可见，避免"刚入库检索不到"的时序问题。
+
+        仅检查强一致计数不够：检索走 Bounded 视图，且向量索引的可见性与标量查询
+        可能不同步。这里用真实的向量检索（Bounded + document_id 过滤）轮询，
+        保证文档标记为 ready 时立刻能被检索到。
+        """
 
         deadline = time.monotonic() + VISIBILITY_TIMEOUT_SECONDS
+        expression = f'document_id == "{document_id}"'
         while time.monotonic() < deadline:
             try:
-                if self.count(document_id) >= expected:
-                    return True
-            except VectorStoreError:
+                rows = self.client.query(
+                    collection_name=self._collection,
+                    filter=expression,
+                    output_fields=["count(*)"],
+                    consistency_level="Bounded",
+                )
+                if rows and int(rows[0]["count(*)"]) >= expected:
+                    hits = self.client.search(
+                        collection_name=self._collection,
+                        data=[list(probe_vector)],
+                        anns_field="embedding",
+                        limit=1,
+                        filter=expression,
+                        output_fields=["id"],
+                        search_params={"metric_type": METRIC_TYPE, "params": {"ef": 64}},
+                        consistency_level="Bounded",
+                    )
+                    if hits and hits[0]:
+                        return True
+            except Exception:  # noqa: BLE001 - 轮询期间的失败留给超时兜底
                 logger.warning("检查向量可见性失败 doc_id=%s", document_id, exc_info=True)
             time.sleep(VISIBILITY_POLL_SECONDS)
         logger.warning(

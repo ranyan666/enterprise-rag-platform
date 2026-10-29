@@ -166,17 +166,17 @@ curl.exe -N -X POST http://127.0.0.1:8000/api/v1/query -H "Content-Type: applica
 .\.venv\Scripts\python.exe scripts\evaluate_retrieval.py --reset --keep-docs
 ```
 
-最近一次评测（20 条标注查询、6 篇语料、`top_k=50`，报告在 `.tmp/eval_report.json`）：
+最近一次评测（26 条标注查询、12 篇语料、`top_k=50`，报告在 `.tmp/eval_report.json`）：
 
 | 系统 | hit@1 | hit@3 | hit@5 | MRR@10 |
 | --- | --- | --- | --- | --- |
 | hybrid | 1.000 | 1.000 | 1.000 | 1.000 |
-| BM25-only | 0.900 | 0.950 | 0.950 | 0.925 |
+| BM25-only | 0.923 | 0.962 | 0.962 | 0.942 |
 | dense-only | 1.000 | 1.000 | 1.000 | 1.000 |
 
-检索延迟 avg 53.9ms / p95 59.4ms。结论：混合检索在本语料上达到满分，相对 BM25 的 top-1 提升 10pp；
-稠密通道本身已经很强，因此“混合比纯向量提升 20%”需要更大、更偏长尾专有名词的评测集来验证，
-评测脚本与标注格式已就绪（见 `eval/README.md`）。
+检索延迟 avg 80.9ms / p95 56.4ms（首次查询含模型加载）。结论：混合检索相对 BM25 的 top-1
+提升 7.7pp、MRR 提升 0.058；但稠密通道在本语料上同样满分，**没有测出相对纯向量的提升**，
+因此不建议在简历里写“召回 +20%”。评测脚本与标注格式见 `eval/README.md`，扩大语料后可复测。
 
 ## 测试
 

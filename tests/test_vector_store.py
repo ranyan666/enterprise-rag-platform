@@ -83,6 +83,7 @@ class FakeMilvusClient:
         output_fields: list[str],
         search_params: dict,
         consistency_level: str = "Bounded",
+        filter: str | None = None,
     ) -> list[list[dict]]:
         self.searches.append(
             {
@@ -93,6 +94,7 @@ class FakeMilvusClient:
                 "output_fields": output_fields,
                 "search_params": search_params,
                 "consistency_level": consistency_level,
+                "filter": filter,
             }
         )
         return [

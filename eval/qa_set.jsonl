@@ -18,3 +18,9 @@
 {"query": "ERR-7712 应该检查什么", "expected_doc": "故障处理手册.md"}
 {"query": "milvus.timeout_seconds 默认多少", "expected_doc": "部署运维.md"}
 {"query": "How can I work from home securely?", "expected_doc": "新员工入职指南.md"}
+{"query": "ERR-6101 是什么错误", "expected_doc": "错误码-ERR-6101.md"}
+{"query": "ERR-6102 是什么错误", "expected_doc": "错误码-ERR-6102.md"}
+{"query": "ERR-6103 是什么错误", "expected_doc": "错误码-ERR-6103.md"}
+{"query": "ERR-6104 是什么错误", "expected_doc": "错误码-ERR-6104.md"}
+{"query": "ERR-6105 是什么错误", "expected_doc": "错误码-ERR-6105.md"}
+{"query": "ERR-6106 是什么错误", "expected_doc": "错误码-ERR-6106.md"}
