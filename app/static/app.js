@@ -134,6 +134,52 @@ function parseEvent(raw) {
   }
 }
 
+const SESSION_KEY = "rag-demo-session";
+
+function getSessionId() {
+  let sessionId = localStorage.getItem(SESSION_KEY);
+  if (!sessionId) {
+    sessionId = (crypto.randomUUID && crypto.randomUUID()) || `s-${Date.now()}`;
+    localStorage.setItem(SESSION_KEY, sessionId);
+  }
+  return sessionId;
+}
+
+function resetPipeline() {
+  const routeChip = $("route-chip");
+  routeChip.textContent = "分析中…";
+  routeChip.className = "chip";
+  const rewriteChip = $("rewrite-chip");
+  rewriteChip.textContent = "";
+  rewriteChip.className = "chip muted";
+  $("pipeline-detail").textContent = "";
+}
+
+function handleAgentEvent(name, data) {
+  const routeChip = $("route-chip");
+  const rewriteChip = $("rewrite-chip");
+  const detail = $("pipeline-detail");
+
+  if (name === "start") {
+    detail.textContent = `会话 ${String(data.session_id || "").slice(0, 8)}…`;
+  } else if (name === "condense") {
+    detail.textContent = `指代消解：${data.search_query}`;
+  } else if (name === "route") {
+    const labels = { vector: "混合检索", direct: "直接回答", refuse: "礼貌拒答" };
+    routeChip.textContent = labels[data.route] || data.route;
+    routeChip.className = `chip ${data.route === "vector" ? "ok" : "warn"}`;
+    detail.textContent = data.reason || "";
+  } else if (name === "retrieval") {
+    detail.textContent = `召回 ${data.count} 条（${data.query}）`;
+  } else if (name === "critique") {
+    detail.textContent = `自检：${data.relevant ? "相关" : "不相关"}${data.reason ? `（${data.reason}）` : ""}`;
+  } else if (name === "rewrite") {
+    rewriteChip.textContent = `第 ${data.rewrite_count} 次改写`;
+    rewriteChip.className = "chip warn visible";
+    detail.textContent = `改为：${data.query}`;
+  }
+}
+
 function setupChat() {
   $("chat-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -143,13 +189,14 @@ function setupChat() {
     button.disabled = true;
     $("answer").textContent = "";
     $("citations").innerHTML = "";
-    $("chat-status").textContent = "检索中…";
+    $("chat-status").textContent = "处理中…";
+    resetPipeline();
 
     try {
-      const response = await fetch("/api/v1/query", {
+      const response = await fetch("/api/v1/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, limit: 5 }),
+        body: JSON.stringify({ question, session_id: getSessionId() }),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
@@ -172,16 +219,16 @@ function setupChat() {
           const parsed = parseEvent(buffer.slice(0, index));
           buffer = buffer.slice(index + 2);
           if (!parsed) continue;
-          if (parsed.event === "meta") {
-            renderCitations(parsed.data.citations || []);
-            $("chat-status").textContent = `检索完成（${parsed.data.retrieval_ms} ms），生成中…`;
-          } else if (parsed.event === "token") {
+          handleAgentEvent(parsed.event, parsed.data);
+
+          if (parsed.event === "token") {
             answer += parsed.data.text;
             $("answer").textContent = answer;
           } else if (parsed.event === "done") {
             const timings = parsed.data.timings || {};
             const ttft = timings.ttft_ms != null ? `${timings.ttft_ms} ms` : "—";
-            $("chat-status").textContent = `首字 ${ttft} · 总耗时 ${timings.total_ms ?? "—"} ms`;
+            $("chat-status").textContent = `首字 ${ttft} · 总耗时 ${timings.total_ms ?? "—"} ms · 改写 ${parsed.data.rewrite_count ?? 0} 次`;
+            renderCitations(parsed.data.citations || []);
             if (!answer) $("answer").textContent = parsed.data.answer || "";
           } else if (parsed.event === "error") {
             $("chat-status").textContent = `错误：${parsed.data.message}`;

@@ -96,6 +96,20 @@ button.ghost {
 
 .status { min-height: 22px; margin: 10px 0 0; color: var(--muted); font-size: 13px; }
 
+.pipeline { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #eef1f7;
+  color: var(--muted);
+  font-size: 12px;
+}
+.chip.ok { background: #e8f6ee; color: var(--ok); }
+.chip.warn { background: #fdf1e5; color: var(--warn); }
+.chip.muted { display: none; }
+.chip.muted.visible { display: inline-block; }
+
 .doc-list { list-style: none; margin: 14px 0 0; padding: 0; }
 .doc-list li {
   display: flex;

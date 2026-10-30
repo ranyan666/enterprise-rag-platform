@@ -10,7 +10,7 @@
   <header>
     <div>
       <h1>企业级智能文档检索与问答平台</h1>
-      <p class="subtitle">上传文档 → 混合检索 → 带引用的流式回答</p>
+      <p class="subtitle">上传文档 → 意图路由 → 混合检索 → 自检反思 → 带引用的流式回答</p>
     </div>
     <span id="health" class="badge">检测中…</span>
   </header>
@@ -33,6 +33,11 @@
         <button id="chat-btn" type="submit">提问</button>
       </form>
       <p id="chat-status" class="status"></p>
+      <div class="pipeline">
+        <span id="route-chip" class="chip">等待提问</span>
+        <span id="rewrite-chip" class="chip muted"></span>
+      </div>
+      <p id="pipeline-detail" class="status"></p>
       <article id="answer" class="answer"></article>
       <ol id="citations" class="citations"></ol>
     </section>

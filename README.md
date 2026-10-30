@@ -47,6 +47,22 @@ Copy-Item .env.example .env
 Invoke-RestMethod http://127.0.0.1:8000/health
 ```
 
+### Docker 容器化（可选）
+
+应用镜像由仓库根目录 `Dockerfile` 构建，`docker-compose.yml` 里的 `app` 服务默认通过 profile 关闭，
+不影响只起依赖的日常开发：
+
+```powershell
+# 容器内通过 host.docker.internal 访问宿主机 Ollama，需先让 Ollama 监听 0.0.0.0
+$env:OLLAMA_HOST = "0.0.0.0"   # 设置后重启 Ollama 生效
+
+docker compose --profile app up -d --build
+Invoke-RestMethod http://127.0.0.1:8000/health
+```
+
+> 说明：`/health` 的 Docker 健康检查要求 `status=ok`；若容器无法访问宿主机 Ollama，会显示 unhealthy，
+> 此时优先检查 `OLLAMA_HOST` 与 `host.docker.internal` 是否可达。
+
 > **镜像拉取说明**
 > - 国内网络无法访问 Docker Hub 时，可在 Docker Desktop 的 *Settings → Docker Engine* 中配置
 >   `registry-mirrors`（例如 `https://docker.1ms.run`），保存后重启引擎。
@@ -203,8 +219,16 @@ flowchart TD
 
 ## 演示页面
 
-<http://127.0.0.1:8000/demo> 提供最小可用界面：上传文档 → 轮询处理状态 → 提问 → 流式答案与引用列表，
-并可查看/删除已入库文档。纯静态 HTML/CSS/JS，无构建步骤，由 FastAPI 托管在 `/static`。
+<http://127.0.0.1:8000/demo> 提供最小可用界面：上传文档 → 轮询处理状态 → 提问。
+提问走 Agentic 链路（`POST /api/v1/chat`），页面会实时显示：
+
+- 路由结果：混合检索 / 直接回答 / 礼貌拒答
+- 指代消解后的检索词（多轮会话时）
+- 召回数量与自检结论
+- 第几次 Query 改写（触发反思时）
+- 流式答案、引用列表与首字/总耗时
+
+纯静态 HTML/CSS/JS，无构建步骤，由 FastAPI 托管在 `/static`。
 
 ## 脚本与评测
 
@@ -255,6 +279,7 @@ cross-encoder 需要额外安装：`pip install -e ".[rerank]"`。重排在本�
 ```
 
 测试默认不依赖 Docker、GPU 与真实模型：外部依赖通过替身/mock 隔离。
+GitHub Actions（`.github/workflows/ci.yml`）在 push/PR 时安装依赖并执行 `pytest -q`。
 
 ## 目录结构
 
@@ -270,7 +295,9 @@ app/
 tests/            # pytest 用例（解析 / 分块 / 仓储 / 接口 / 向量 / 检索 / 问答 / Agentic）
 scripts/          # e2e_smoke.py、evaluate_retrieval.py、evaluate_agentic.py
 eval/             # corpus/ 语料、qa_set.jsonl、agentic_dataset.jsonl
-docker-compose.yml # Milvus + etcd + MinIO + Redis
+Dockerfile        # 应用镜像
+.github/workflows # GitHub Actions（pytest）
+docker-compose.yml # Milvus + etcd + MinIO + Redis（+ 可选 app 服务）
 ```
 
 ## 当前状态

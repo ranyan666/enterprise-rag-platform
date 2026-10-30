@@ -84,6 +84,35 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # 应用本体：默认不启动，运行 `docker compose --profile app up -d --build`
+  # 前置：Ollama 需监听 0.0.0.0（容器通过 host.docker.internal 访问宿主机模型）
+  app:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-app
+    environment:
+      MILVUS_URI: http://milvus:19530
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      SQLITE_PATH: /app/data/app.sqlite3
+      UPLOAD_DIR: /app/data/uploads
+      CHAT_BACKEND: langchain
+      AGENT_ENABLED: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      milvus:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   etcd_data:
   minio_data:
