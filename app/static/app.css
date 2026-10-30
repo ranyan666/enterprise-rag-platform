@@ -110,7 +110,13 @@ button.ghost {
 .chip.muted { display: none; }
 .chip.muted.visible { display: inline-block; }
 
-.doc-list { list-style: none; margin: 14px 0 0; padding: 0; }
+.doc-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  max-height: 430px;
+  overflow-y: auto;
+}
 .doc-list li {
   display: flex;
   align-items: center;

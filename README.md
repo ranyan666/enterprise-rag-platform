@@ -228,6 +228,8 @@ flowchart TD
 - 第几次 Query 改写（触发反思时）
 - 流式答案、引用列表与首字/总耗时
 
+![Agentic RAG 演示](docs/demo-agentic.png)
+
 纯静态 HTML/CSS/JS，无构建步骤，由 FastAPI 托管在 `/static`。
 
 ## 脚本与评测

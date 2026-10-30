@@ -88,9 +88,12 @@ services:
   # 前置：Ollama 需监听 0.0.0.0（容器通过 host.docker.internal 访问宿主机模型）
   app:
     profiles: ["app"]
+    image: ${APP_IMAGE:-enterprise-rag-app:local}
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-python:3.10-slim}
     container_name: rag-app
     environment:
       MILVUS_URI: http://milvus:19530
