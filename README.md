@@ -1,5 +1,7 @@
 # 企业级智能文档检索与问答平台
 
+[![CI](https://github.com/ranyan666/enterprise-rag-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/ranyan666/enterprise-rag-platform/actions/workflows/ci.yml)
+
 基于 RAG 架构的企业内部知识库问答平台：解析多格式业务文档并知识入库，结合大模型与私有数据回答业务咨询，缓解内部信息孤岛。
 
 ## 技术栈
